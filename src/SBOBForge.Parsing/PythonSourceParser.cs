@@ -15,7 +15,7 @@ namespace SBOBForge.Parsing;
 public sealed class PythonSourceParser : ICodeModelParser
 {
     public const string BackendId = "sbobforge-python311";
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
 
     string ICodeModelParser.BackendId => BackendId;
 
@@ -36,43 +36,63 @@ public sealed class PythonSourceParser : ICodeModelParser
         var toks = new List<Token>();
         var indents = new List<int> { 0 };
         int i = 0, line = 1, bracketDepth = 0;
+        // True when the previous physical line ended with an explicit '\'
+        // continuation: the next physical line is part of the same logical
+        // line, so its leading whitespace is NOT indentation (no INDENT/
+        // DEDENT events, no blank-line treatment).
+        bool continued = false;
 
         while (i < src.Length)
         {
-            // ---- start of a logical line: indentation handling ----
-            int col = 0;
-            bool sawSpace = false, sawTab = false;
-            while (i < src.Length && (src[i] == ' ' || src[i] == '\t'))
+            // ---- start of a physical line: indentation handling ----
+            if (!continued)
             {
-                if (src[i] == '\t') { sawTab = true; col = (col / 8 + 1) * 8; }
-                else { sawSpace = true; col++; }
-                i++;
-            }
-            if (sawSpace && sawTab)
-                throw new ParseHardError($"{path}:{line}: inconsistent use of tabs and spaces in indentation");
-            if (i >= src.Length || src[i] == '\n' || src[i] == '\r' || src[i] == '#')
-            {
-                // blank or comment-only line: no indent events, no NEWLINE token
-                while (i < src.Length && src[i] != '\n') i++;
-                if (i < src.Length) { i++; line++; }
-                continue;
-            }
-            if (bracketDepth == 0)
-            {
-                if (col > indents[^1])
+                int col = 0;
+                bool sawSpace = false, sawTab = false;
+                while (i < src.Length && (src[i] == ' ' || src[i] == '\t'))
                 {
-                    indents.Add(col);
-                    toks.Add(new Token(Tt.Indent, "", line));
+                    if (src[i] == '\t') { sawTab = true; col = (col / 8 + 1) * 8; }
+                    else { sawSpace = true; col++; }
+                    i++;
                 }
-                else if (col < indents[^1])
+                if (sawSpace && sawTab)
+                    throw new ParseHardError($"{path}:{line}: inconsistent use of tabs and spaces in indentation");
+                if (i >= src.Length || src[i] == '\n' || src[i] == '\r' || src[i] == '#')
                 {
-                    while (indents[^1] > col)
+                    // blank or comment-only line: no indent events, no NEWLINE token
+                    while (i < src.Length && src[i] != '\n') i++;
+                    if (i < src.Length) { i++; line++; }
+                    continue;
+                }
+                if (bracketDepth == 0)
+                {
+                    if (col > indents[^1])
                     {
-                        indents.RemoveAt(indents.Count - 1);
-                        toks.Add(new Token(Tt.Dedent, "", line));
+                        indents.Add(col);
+                        toks.Add(new Token(Tt.Indent, "", line));
                     }
-                    if (indents[^1] != col)
-                        throw new ParseHardError($"{path}:{line}: unindent does not match any outer indentation level");
+                    else if (col < indents[^1])
+                    {
+                        while (indents[^1] > col)
+                        {
+                            indents.RemoveAt(indents.Count - 1);
+                            toks.Add(new Token(Tt.Dedent, "", line));
+                        }
+                        if (indents[^1] != col)
+                            throw new ParseHardError($"{path}:{line}: unindent does not match any outer indentation level");
+                    }
+                }
+            }
+            else
+            {
+                // continuation line: leading whitespace is not indentation
+                while (i < src.Length && (src[i] == ' ' || src[i] == '\t')) i++;
+                if (i < src.Length && src[i] == '\r') i++;
+                if (i >= src.Length || src[i] == '\n')
+                {
+                    // empty continuation line: still part of the logical line
+                    if (i < src.Length) { i++; line++; }
+                    continue;
                 }
             }
 
@@ -134,6 +154,7 @@ public sealed class PythonSourceParser : ICodeModelParser
             if (i < src.Length && src[i] == '\n') { i++; line++; }
             if (bracketDepth == 0 && !continuation && src.Length > 0)
                 toks.Add(new Token(Tt.Newline, "", line));
+            continued = continuation;
         }
         while (indents.Count > 1)
         {
