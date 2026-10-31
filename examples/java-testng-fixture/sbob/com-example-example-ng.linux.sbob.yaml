@@ -1,0 +1,28 @@
+apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
+kind: ContainerProfile
+metadata:
+  name: com-example-example-ng.linux
+  namespace: develapp
+  annotations:
+    kubescape.io/managed-by: User
+    develapp.io/binding: package-purl
+    develapp.io/generator: sbobforge@0.1.0
+    develapp.io/grammar-lock-sha256: a2738e7d5cfdf6404d48462c954331a8060b25af25fad30df488ac6816a27256
+    develapp.io/behavior-hash: d177aa2e15a11e0a767b47f6d677ac10159bbf43bcac28c1ab3898f1642e6cee
+spec:
+  architectures: [amd64]
+  imageID: pkg:maven/com.example/example-ng@1.0.0
+  execs:
+    - path: /usr/bin/git
+      args: [/usr/bin/git, status]
+  opens:
+    - path: /var/log/ng-app.log
+      flags: [O_WRONLY, O_CREAT, O_APPEND]
+    - path: /var/log/ng-app.log
+      flags: [O_WRONLY, O_CREAT, O_TRUNC]
+  egress:
+    - identifier: api.example.com-egress
+      type: external
+      dnsNames: [api.example.com]
+      ports:
+        - { port: 443, protocol: TCP }

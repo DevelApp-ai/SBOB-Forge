@@ -1,0 +1,35 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "d177aa2e15a11e0a767b47f6d677ac10159bbf43bcac28c1ab3898f1642e6cee",
+  "FilesAnalyzed": 4,
+  "TestFiles": 1,
+  "TestEntries": 1,
+  "Quarantined": [],
+  "Noise": [
+    {
+      "Description": "harness API: .LogWriter",
+      "File": "tests/com/example/ng/NgTests.java",
+      "Line": 11,
+      "TestId": "com.example.ng.tests.NgTests.appendsLog"
+    },
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/com/example/ng/NgTests.java",
+      "Line": 15,
+      "TestId": "com.example.ng.tests.NgTests.legacyRewriteStillUsed"
+    },
+    {
+      "Description": "test helper (not an entry method): .LogWriter",
+      "File": "tests/com/example/ng/NgTests.java",
+      "Line": 17,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): LogWriter.rewriteLog",
+      "File": "tests/com/example/ng/NgTests.java",
+      "Line": 17,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": []
+}
