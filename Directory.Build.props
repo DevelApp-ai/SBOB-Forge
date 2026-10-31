@@ -12,4 +12,15 @@
     <Deterministic>true</Deterministic>
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- ICU4N.Resources is transitive via DevelApp.Minotaur -> ICU4N. Its locale
+         satellites break SDK 8 satellite copying (NETSDK1188 under invariant
+         globalization) and its buildTransitive targets warn on SDK 8
+         (ICU4N_IDE_0001), which is fatal with TreatWarningsAsErrors. The tool
+         runs invariant-globalization by contract (TDS 9) and never touches
+         ICU, so the satellites are dead weight: exclude all assets. The
+         version is pinned by ICU4N itself ([60.1.0-alpha.438]), so this
+         explicit pin rides the same exact version. -->
+    <PackageReference Include="ICU4N.Resources" Version="60.1.0-alpha.438" ExcludeAssets="all" />
+  </ItemGroup>
 </Project>
