@@ -59,6 +59,24 @@ public class PythonCatalogTests
     }
 
     [Fact]
+    public void PartiallyLiteralArgvAnchorsArgv0()
+    {
+        // argv0-anchoring (TDS 5.2): literal program name + dynamic later args
+        // lifts instead of quarantining the whole exec.
+        var anchored = Lower("subprocess", "run", new CallArg(ArgKind.PartialList, "git"));
+        Assert.Equal(LiftOutcome.Event, anchored!.Outcome);
+        Assert.Equal(BehaviorPrimitive.Exec, anchored.Primitive);
+        Assert.Equal("git", anchored.Path);
+        Assert.Empty(anchored.Args);
+        Assert.False(anchored.ArgsAllLiteral); // pipeline emits [argv0, ⋯⋯]
+
+        // fully literal lists keep exact argv (List, not PartialList)
+        var literal = Lower("subprocess", "run", new CallArg(ArgKind.List, "git\u0001status"));
+        Assert.True(literal!.ArgsAllLiteral);
+        Assert.Equal(new[] { "status" }, literal.Args);
+    }
+
+    [Fact]
     public void NetworkRulesLowerUrlsConnectionsAndListeners()
     {
         var get = Lower("requests", "get", CallArg.Literal("https://api.example.com/status"));

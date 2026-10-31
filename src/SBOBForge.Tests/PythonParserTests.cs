@@ -179,6 +179,27 @@ public class PythonParserTests
     }
 
     [Fact]
+    public void PartiallyLiteralArgvAnchorsLiteralArgv0()
+    {
+        var model = Parse("""
+            import subprocess
+
+
+            def pull(d):
+                subprocess.run(["git", "-C", str(d), "pull", "--ff-only"])
+                subprocess.run([cmd, "-C", str(d)])
+            """);
+        var pull = Assert.Single(Assert.Single(model.Types).Methods, m => m.Name == "pull");
+        var runs = pull.Invocations.Where(i => i.Method == "run").ToList();
+        Assert.Equal(2, runs.Count);
+        // literal argv0 + dynamic later args: anchored (TDS 5.2 argv0-anchoring)
+        Assert.Equal(ArgKind.PartialList, runs[0].Args[0].Kind);
+        Assert.Equal("git", runs[0].Args[0].Value);
+        // dynamic argv0 cannot anchor: stays an unresolvable expression
+        Assert.Equal(ArgKind.Expression, runs[1].Args[0].Kind);
+    }
+
+    [Fact]
     public void BadDedentIsAHardError()
     {
         Assert.Throws<ParseHardError>(() => Parse("def a():\n        x = 1\n    y = 2\n"));

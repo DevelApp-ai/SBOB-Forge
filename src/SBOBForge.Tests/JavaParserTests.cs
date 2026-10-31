@@ -128,4 +128,23 @@ public class JavaParserTests
     {
         Assert.Throws<ParseHardError>(() => Parse("public class A {"));
     }
+
+    [Fact]
+    public void PartiallyLiteralArgvAnchorsLiteralArgv0()
+    {
+        var model = Parse("""
+            import java.util.List;
+
+            public class Repo {
+                public void pull(String d) throws Exception {
+                    ProcessBuilder pb = new ProcessBuilder(List.of("git", "-C", d, "pull"));
+                }
+            }
+            """);
+        var pull = Assert.Single(Assert.Single(model.Types).Methods, m => m.Name == "pull");
+        var pb = Assert.Single(pull.Invocations, i => i.Method == "ProcessBuilder");
+        var argv = pb.Args[0];
+        Assert.Equal(ArgKind.PartialList, argv.Kind);
+        Assert.Equal("git", argv.Value);
+    }
 }

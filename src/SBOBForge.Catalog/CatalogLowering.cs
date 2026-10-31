@@ -328,6 +328,15 @@ public static class CatalogLowering
                 argv[0], Array.Empty<string>(), argv[1..], true,
                 null, null, "", NetDirection.Egress, null, null);
         }
+        if (resolvedArg.Kind == ArgKind.PartialList)
+        {
+            // argv0-anchoring (TDS 5.2): the program name is a literal; later args are dynamic.
+            // Emit the anchored argv0 with the args wildcard instead of quarantining the whole exec.
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedArg.Value, Array.Empty<string>(), Array.Empty<string>(), false,
+                null, null, "", NetDirection.Egress, null, null);
+        }
         if (resolvedArg.IsLiteral)
         {
             // a bare string without shell=True is the program name (no extra argv)
