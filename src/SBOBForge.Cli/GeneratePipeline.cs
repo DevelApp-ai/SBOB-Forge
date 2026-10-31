@@ -4,7 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using SBOBForge.Adapters;
 using SBOBForge.Adapters.DotNet;
+using SBOBForge.Adapters.Java;
+using SBOBForge.Adapters.Python;
 using SBOBForge.Catalog;
 using SBOBForge.Core;
 using SBOBForge.Core.Config;
@@ -42,9 +45,13 @@ public sealed class GenerationResult
 /// The generate pipeline (TDS 7-8, 13): lock verification → discovery →
 /// parse → adapt → lower → tier → attribute → IR → emit → validate → write.
 /// Every stage is content-deterministic (TDS 9): same inputs, same bytes.
+/// M2: per-language dispatch (.cs → Roslyn/.NET, .java → java17 parser,
+/// .py → python311 parser).
 /// </summary>
 public static class GeneratePipeline
 {
+    internal enum SourceLang { CSharp, Java, Python }
+
     public static GenerationResult Run(GenerationOptions options)
     {
         var root = Path.GetFullPath(options.RepoRoot);
@@ -60,43 +67,46 @@ public static class GeneratePipeline
         if (options.Frozen)
         {
             grammarLock.VerifyFrozen(MinotaurSourceValidator.InstalledVersion());
-            if (grammarLock.Grammars.TryGetValue("csharp", out var pinned))
-            {
-                var installed = RoslynVersion();
-                if (!string.Equals(pinned.Version, installed, StringComparison.Ordinal))
-                    throw new LockMismatchException(
-                        $"Grammar lock mismatch: sbobforge.lock.json pins Roslyn {pinned.Version}, installed is {installed}. " +
-                        "Run 'sbobforge lock --update' and review like a dependency bump.");
-            }
+            grammarLock.VerifyFrozenEntry("csharp", RoslynVersion(), null);
+            grammarLock.VerifyFrozenEntry("java17", JavaSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("python311", PythonSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry(DotNetCatalog.LockEntryName,
+                DotNetCatalogLowering.Catalog.Version.ToString(), DotNetCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(JavaCatalog.LockEntryName,
+                JavaCatalogLowering.Catalog.Version.ToString(), JavaCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(PythonCatalog.LockEntryName,
+                PythonCatalogLowering.Catalog.Version.ToString(), PythonCatalog.ComputeDefaultHash());
         }
-
-        var parser = new RoslynCSharpParser();
-        var registry = new TestFrameworkRegistry();
 
         var sutFiles = FileDiscovery.Enumerate(root, config.SutGlobs);
         var testFiles = FileDiscovery.Enumerate(root, config.TestGlobs);
 
         var allowedParseError = new HashSet<string>(config.AllowParseError, StringComparer.Ordinal);
 
-        var sutModels = new List<CodeModel>();
+        var sutModels = new List<(CodeModel Model, SourceLang Lang)>();
         var testModels = new List<(CodeModel Model, IReadOnlyList<TestEntry> Entries, List<TestEntry> Skipped)>();
         var parseErrors = new List<string>();
 
         foreach (var file in sutFiles)
-            sutModels.Add(ParseOrQuarantine(parser, root, file, allowedParseError, parseErrors));
+        {
+            var lang = LangOf(file);
+            sutModels.Add((ParseOrQuarantine(ParserFor(lang), root, file, allowedParseError, parseErrors), lang));
+        }
 
         foreach (var file in testFiles)
         {
-            var model = ParseOrQuarantine(parser, root, file, allowedParseError, parseErrors);
-            var entries = registry.ExtractEntries(model);
+            var lang = LangOf(file);
+            var model = ParseOrQuarantine(ParserFor(lang), root, file, allowedParseError, parseErrors);
+            var entries = RegistryFor(lang)(model);
             testModels.Add((model, entries.Where(e => e.Enabled).ToList(), entries.Where(e => !e.Enabled).ToList()));
         }
 
-        // Simple-name index over SUT methods for one-hop test→SUT resolution (M1).
+        // Simple-name index over SUT methods for one-hop test→SUT resolution (M1),
+        // language-scoped so mixed-language repos never cross-match.
         var sutMethodsByName = sutModels
-            .SelectMany(m => m.AllMethods.Select(method => (m, method)))
-            .GroupBy(x => x.method.Name, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            .SelectMany(x => x.Model.AllMethods.Select(method => (x.Model, x.Lang, method)))
+            .GroupBy(x => (x.Lang, x.method.Name))
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         var execs = new List<ExecEvent>();
         var opens = new List<OpenEvent>();
@@ -168,13 +178,13 @@ public static class GeneratePipeline
         }
 
         // 1) SUT-file invocations: direct events, attributed to the SUT method.
-        foreach (var model in sutModels)
+        foreach (var (model, lang) in sutModels)
         {
             foreach (var method in model.AllMethods)
             {
                 foreach (var inv in method.Invocations)
                 {
-                    var lowered = DotNetCatalogLowering.Lower(inv);
+                    var lowered = LowerFor(lang, inv, null);
                     if (lowered is null) continue;
                     AddLowered(lowered, "sut:" + method.QualifiedName, model.RelativePath, inv.Line);
                 }
@@ -185,6 +195,8 @@ public static class GeneratePipeline
         // test; one-hop SUT calls pull the SUT method body; everything else is harness noise.
         foreach (var (model, entries, skipped) in testModels)
         {
+            var lang = LangOf(model.RelativePath);
+
             foreach (var skippedEntry in skipped)
                 noise.Add(new NoiseItem("skipped test excluded (harness behavior not profiled)",
                     skippedEntry.File, skippedEntry.Line, skippedEntry.TestId));
@@ -207,7 +219,7 @@ public static class GeneratePipeline
 
                 foreach (var entry in methodEntries)
                 {
-                    // M1: theory-case values bound by parameter name (ordinal-aligned).
+                    // M1: theory/parametrize case values bound by parameter name (ordinal-aligned).
                     CallArg? Substitute(CallArg arg)
                     {
                         if (arg.Kind != ArgKind.Identifier) return null;
@@ -222,14 +234,14 @@ public static class GeneratePipeline
 
                     foreach (var inv in method.Invocations)
                     {
-                        // One-hop: direct call into a SUT method → pull its body invocations.
-                        if (sutMethodsByName.TryGetValue(inv.Method, out var targets))
+                        // One-hop: direct call into a same-language SUT method → pull its body invocations.
+                        if (sutMethodsByName.TryGetValue((lang, inv.Method), out var targets))
                         {
-                            foreach (var (sutModel, sutMethod) in targets)
+                            foreach (var (sutModel, _, sutMethod) in targets)
                             {
                                 foreach (var sutInv in sutMethod.Invocations)
                                 {
-                                    var sutLowered = DotNetCatalogLowering.Lower(sutInv);
+                                    var sutLowered = LowerFor(lang, sutInv, null);
                                     if (sutLowered is null) continue;
                                     AddLowered(sutLowered, entry.TestId, sutModel.RelativePath, sutInv.Line);
                                 }
@@ -237,7 +249,7 @@ public static class GeneratePipeline
                             continue;
                         }
 
-                        var lowered = DotNetCatalogLowering.Lower(inv, Substitute);
+                        var lowered = LowerFor(lang, inv, Substitute);
                         if (lowered is null)
                         {
                             noise.Add(new NoiseItem($"harness API: {inv.Receiver}.{inv.Method}",
@@ -284,8 +296,34 @@ public static class GeneratePipeline
         };
     }
 
+    internal static SourceLang LangOf(string file) =>
+        file.EndsWith(".java", StringComparison.OrdinalIgnoreCase) ? SourceLang.Java
+        : file.EndsWith(".py", StringComparison.OrdinalIgnoreCase) ? SourceLang.Python
+        : SourceLang.CSharp;
+
+    internal static ICodeModelParser ParserFor(SourceLang lang) => lang switch
+    {
+        SourceLang.Java => new JavaSourceParser(),
+        SourceLang.Python => new PythonSourceParser(),
+        _ => new RoslynCSharpParser()
+    };
+
+    private static Func<CodeModel, IReadOnlyList<TestEntry>> RegistryFor(SourceLang lang) => lang switch
+    {
+        SourceLang.Java => new JavaTestFrameworkRegistry().ExtractEntries,
+        SourceLang.Python => new PythonTestFrameworkRegistry().ExtractEntries,
+        _ => new TestFrameworkRegistry().ExtractEntries
+    };
+
+    internal static LoweredInvocation? LowerFor(SourceLang lang, InvocationDecl inv, Func<CallArg, CallArg?>? substitute) => lang switch
+    {
+        SourceLang.Java => JavaCatalogLowering.Lower(inv, substitute),
+        SourceLang.Python => PythonCatalogLowering.Lower(inv, substitute),
+        _ => DotNetCatalogLowering.Lower(inv, substitute)
+    };
+
     private static CodeModel ParseOrQuarantine(
-        RoslynCSharpParser parser, string root, string file, HashSet<string> allowed, List<string> parseErrors)
+        ICodeModelParser parser, string root, string file, HashSet<string> allowed, List<string> parseErrors)
     {
         var text = File.ReadAllText(Path.Combine(root, file));
         try
@@ -315,7 +353,7 @@ public static class GeneratePipeline
         return (path, ResolutionTier.Literal);
     }
 
-    private static (string Path, ResolutionTier Tier) ApplyExecPolicy(string target, SbobForgeConfig config)
+    private static (string Path, ResolutionTier Tier) ApplyExecPolicy(string target, SBOBForge.Core.Config.SbobForgeConfig config)
     {
         if (target.Contains('/'))
             return (target, ResolutionTier.Literal);

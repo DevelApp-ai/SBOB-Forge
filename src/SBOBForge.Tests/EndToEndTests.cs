@@ -24,10 +24,10 @@ public class EndToEndTests
         return dir?.FullName ?? throw new InvalidOperationException("repo root not found (missing SBOBForge.sln)");
     }
 
-    private static string CopyFixtureToTemp()
+    private static string CopyFixtureToTemp(string fixtureName = "dotnet-xunit-fixture")
     {
         var repo = FindRepoRoot();
-        var fixture = Path.Combine(repo, "examples", "dotnet-xunit-fixture");
+        var fixture = Path.Combine(repo, "examples", fixtureName);
         var temp = Path.Combine(Path.GetTempPath(), "sbobforge-fixture-" + Guid.NewGuid().ToString("N"));
         CopyDirectory(fixture, temp);
         return temp;
@@ -123,6 +123,164 @@ public class EndToEndTests
     {
         using var temp = new TempDir(CopyFixtureToTemp());
         Assert.Throws<StrictQuarantineException>(() => Generate(temp.Path, strict: true));
+    }
+
+    // ---- M2: Java and Python fixtures (#7) -------------------------------
+
+    [Theory]
+    [InlineData("java-junit5-fixture")]
+    [InlineData("java-testng-fixture")]
+    [InlineData("python-pytest-fixture")]
+    [InlineData("python-unittest-fixture")]
+    public void M2FixtureRegeneratesByteIdenticallyAndDoesNotDrift(string fixtureName)
+    {
+        using var temp = new TempDir(CopyFixtureToTemp(fixtureName));
+        var first = Generate(temp.Path);
+        var second = Generate(temp.Path);
+        Assert.Equal(first.SbobYaml, second.SbobYaml);
+        Assert.Equal(first.ProvenanceJsonl, second.ProvenanceJsonl);
+        Assert.Equal(first.CoverageJson, second.CoverageJson);
+        Assert.Equal(first.Ir.ComputeBehaviorHash(), second.Ir.ComputeBehaviorHash());
+
+        var repo = FindRepoRoot();
+        var golden = Path.Combine(repo, "examples", fixtureName, "sbob", first.SbobFileName);
+        if (File.Exists(golden))
+            Assert.Equal(File.ReadAllText(golden), first.SbobYaml);
+    }
+
+    [Fact]
+    public void JavaJunit5FixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("java-junit5-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(4, result.Ir.Opens.Count);
+        Assert.Contains(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json"
+            && o.Tier == ResolutionTier.Pattern
+            && o.Flags.SequenceEqual(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }));
+        var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
+        Assert.Equal(ResolutionTier.Literal, config.Tier);
+        Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
+        // SUT-direct (Files.readString) + one-hop test attribution merge into one entry
+        Assert.Equal(2, config.Provenance.Count);
+        Assert.Contains(config.Provenance, p => p.TestId.StartsWith("sut:"));
+        Assert.Contains(config.Provenance, p => p.TestId.EndsWith("loadsConfigFromEtc"));
+        // @ValueSource theory propagation through Path.of(path)
+        Assert.Contains(result.Ir.Opens, o => o.Path == "/var/log/app.log");
+        Assert.Contains(result.Ir.Opens, o => o.Path == "/var/log/other.log");
+
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+        Assert.Equal(ResolutionTier.Pattern, exec.Tier);
+
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+        Assert.Equal(8080, Assert.Single(result.Ir.Ingress).Port);
+
+        Assert.Contains(result.Ir.Coverage.Quarantined,
+            q => q.Reason.Contains("non-constant expression") && q.File.EndsWith("ConfigStore.java"));
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacyPathStillUsed"));
+    }
+
+    [Fact]
+    public void JavaTestngFixtureLiftsAppendAndTruncate()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("java-testng-fixture"));
+        var result = Generate(temp.Path);
+
+        // FileOutputStream(path, true) → O_APPEND; FileOutputStream(path) → O_TRUNC
+        var append = Assert.Single(result.Ir.Opens,
+            o => o.Path == "/var/log/ng-app.log" && o.Flags.Contains("O_APPEND"));
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, append.Flags);
+        // SUT-direct + enabled @Test one-hop call
+        Assert.Equal(2, append.Provenance.Count);
+        var truncate = Assert.Single(result.Ir.Opens,
+            o => o.Path == "/var/log/ng-app.log" && o.Flags.Contains("O_TRUNC"));
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, truncate.Flags);
+        // rewriteLog is only called by the disabled test → SUT-direct provenance only
+        Assert.Single(truncate.Provenance, p => p.TestId.StartsWith("sut:"));
+
+        // Runtime.getRuntime().exec("git status") → token split + execPathPolicy
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+
+        var egress = Assert.Single(result.Ir.Egress);
+        Assert.Equal("api.example.com", egress.DnsName);
+        Assert.Equal(443, egress.Port);
+        Assert.Empty(result.Ir.Ingress);
+        Assert.Empty(result.Ir.Coverage.Quarantined);
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacyRewriteStillUsed"));
+    }
+
+    [Fact]
+    public void PythonPytestFixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("python-pytest-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(4, result.Ir.Opens.Count);
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, cache.Flags);
+
+        var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
+        Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
+        Assert.Equal(2, config.Provenance.Count);
+        Assert.Contains(config.Provenance, p => p.TestId.StartsWith("sut:"));
+        Assert.Contains(config.Provenance, p => p.TestId.EndsWith("test_loads_config"));
+
+        // parametrize case values bound by parameter name into open(path, "w")
+        Assert.Contains(result.Ir.Opens, o => o.Path == "/var/log/app.log"
+            && o.Flags.SequenceEqual(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }));
+        Assert.Contains(result.Ir.Opens, o => o.Path == "/var/log/other.log");
+
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+        Assert.Equal(8080, Assert.Single(result.Ir.Ingress).Port);
+
+        Assert.Contains(result.Ir.Coverage.Quarantined,
+            q => q.Reason.Contains("interpolated") && q.File.EndsWith("config_store.py"));
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("test_legacy_path"));
+    }
+
+    [Fact]
+    public void PythonUnittestFixtureLiftsShellExecAndModeStrings()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("python-unittest-fixture"));
+        var result = Generate(temp.Path);
+
+        // os.makedirs("%PackageRoot%/cache") → tier-P directory open
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache");
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+        Assert.Equal(new[] { "O_DIRECTORY", "O_CREAT" }, cache.Flags);
+
+        // open(path, "a") mode string → O_APPEND; SUT-direct + skipIf(False) one-hop test
+        var log = Assert.Single(result.Ir.Opens, o => o.Path == "/var/log/status.log");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, log.Flags);
+        Assert.Equal(2, log.Provenance.Count);
+        Assert.Contains(log.Provenance, p => p.TestId.EndsWith("test_appends_log"));
+
+        // subprocess.run("git status", shell=True) → fixed /bin/sh -c lowering
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/bin/sh", exec.Path);
+        Assert.Equal(new[] { "/bin/sh", "-c", "git status" }, exec.Args);
+
+        var egress = Assert.Single(result.Ir.Egress);
+        Assert.Equal("api.example.com", egress.DnsName);
+        Assert.Equal(443, egress.Port);
+        // HTTPServer(("0.0.0.0", 8080), handler) address tuple
+        Assert.Equal(8080, Assert.Single(result.Ir.Ingress).Port);
+
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("test_legacy_shell"));
     }
 
     private sealed class TempDir : IDisposable

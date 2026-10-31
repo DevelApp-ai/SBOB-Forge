@@ -22,7 +22,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SBOBForge.Cli\SBOBForge.Cli.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters\SBOBForge.Adapters.csproj" />
     <ProjectReference Include="..\SBOBForge.Adapters.DotNet\SBOBForge.Adapters.DotNet.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters.Java\SBOBForge.Adapters.Java.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters.Python\SBOBForge.Adapters.Python.csproj" />
     <ProjectReference Include="..\SBOBForge.Catalog\SBOBForge.Catalog.csproj" />
   </ItemGroup>
 

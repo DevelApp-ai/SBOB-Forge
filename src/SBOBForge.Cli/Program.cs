@@ -83,9 +83,13 @@ public static class Program
     private static int CmdVersion()
     {
         Console.WriteLine($"sbobforge {Version} (IR v{Core.Model.BehaviorIr.CurrentVersion})");
-        Console.WriteLine($"  parser backend: roslyn-csharp {GeneratePipeline.RoslynVersion()} (pinned via lock)");
+        Console.WriteLine($"  parser backends: roslyn-csharp {GeneratePipeline.RoslynVersion()}, " +
+                          $"sbobforge-java17 {Parsing.JavaSourceParser.Version}, " +
+                          $"sbobforge-python311 {Parsing.PythonSourceParser.Version} (pinned via lock)");
         Console.WriteLine($"  source-validation substrate: DevelApp.Minotaur {MinotaurSourceValidator.InstalledVersion()} (pinned via lock)");
-        Console.WriteLine($"  dotnet catalog: v{DotNetCatalogLowering.Catalog.Version}");
+        Console.WriteLine($"  catalogs: dotnet v{DotNetCatalogLowering.Catalog.Version}, " +
+                          $"java v{JavaCatalogLowering.Catalog.Version}, " +
+                          $"python v{PythonCatalogLowering.Catalog.Version}");
         return 0;
     }
 
@@ -117,16 +121,40 @@ public static class Program
             Version = GeneratePipeline.RoslynVersion(),
             Sha256 = ""
         };
-        lockModel.Grammars["dotnet-catalog"] = new GrammarLockEntry
+        lockModel.Grammars["java17"] = new GrammarLockEntry
+        {
+            Version = Parsing.JavaSourceParser.Version,
+            Sha256 = ""
+        };
+        lockModel.Grammars["python311"] = new GrammarLockEntry
+        {
+            Version = Parsing.PythonSourceParser.Version,
+            Sha256 = ""
+        };
+        lockModel.Grammars[DotNetCatalog.LockEntryName] = new GrammarLockEntry
         {
             Version = DotNetCatalogLowering.Catalog.Version.ToString(),
             Sha256 = DotNetCatalog.ComputeDefaultHash()
         };
+        lockModel.Grammars[JavaCatalog.LockEntryName] = new GrammarLockEntry
+        {
+            Version = JavaCatalogLowering.Catalog.Version.ToString(),
+            Sha256 = JavaCatalog.ComputeDefaultHash()
+        };
+        lockModel.Grammars[PythonCatalog.LockEntryName] = new GrammarLockEntry
+        {
+            Version = PythonCatalogLowering.Catalog.Version.ToString(),
+            Sha256 = PythonCatalog.ComputeDefaultHash()
+        };
         lockModel.Save(lockPath);
         Console.WriteLine($"{(update ? "updated" : "created")} {lockPath}");
         Console.WriteLine("  minotaur " + lockModel.Minotaur.Version);
-        Console.WriteLine("  csharp " + GrammarCsharp(lockModel));
-        Console.WriteLine("  dotnet-catalog v" + DotNetCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars["dotnet-catalog"].Sha256);
+        Console.WriteLine("  csharp " + GrammarCsharp(lockModel) +
+                          ", java17 " + lockModel.Grammars["java17"].Version +
+                          ", python311 " + lockModel.Grammars["python311"].Version);
+        Console.WriteLine("  dotnet-catalog v" + DotNetCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[DotNetCatalog.LockEntryName].Sha256);
+        Console.WriteLine("  java-catalog v" + JavaCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[JavaCatalog.LockEntryName].Sha256);
+        Console.WriteLine("  python-catalog v" + PythonCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[PythonCatalog.LockEntryName].Sha256);
         Console.WriteLine("  hash: " + lockModel.ComputeLockHash());
         Console.WriteLine("  review lock changes like a dependency bump (TDS 5.3)");
         return 0;
@@ -140,21 +168,43 @@ public static class Program
         var root = Path.GetFullPath(args[0]);
         var configPath = OptionalPath(args, root);
         var config = SbobForgeConfig.Load(configPath ?? Path.Combine(root, "sbobforge.json"));
-        var parser = new RoslynCSharpParser();
-        var registry = new Adapters.DotNet.TestFrameworkRegistry();
+        var parsers = new Dictionary<string, Parsing.ICodeModelParser>();
+
+        Parsing.ICodeModelParser ParserFor(string file)
+        {
+            var key = Path.GetExtension(file).ToLowerInvariant();
+            if (!parsers.TryGetValue(key, out var parser))
+            {
+                parser = key switch
+                {
+                    ".java" => new Parsing.JavaSourceParser(),
+                    ".py" => new Parsing.PythonSourceParser(),
+                    _ => new RoslynCSharpParser()
+                };
+                parsers[key] = parser;
+            }
+            return parser;
+        }
+
+        Func<Parsing.CodeModel, IReadOnlyList<Adapters.TestEntry>> RegistryFor(string file) =>
+            Path.GetExtension(file).ToLowerInvariant() switch
+            {
+                ".java" => new Adapters.Java.JavaTestFrameworkRegistry().ExtractEntries,
+                ".py" => new Adapters.Python.PythonTestFrameworkRegistry().ExtractEntries,
+                _ => new Adapters.DotNet.TestFrameworkRegistry().ExtractEntries
+            };
 
         foreach (var file in Core.Discovery.FileDiscovery.Enumerate(root, config.SutGlobs))
         {
-            var model = parser.Parse(file, File.ReadAllText(Path.Combine(root, file)));
+            var model = ParserFor(file).Parse(file, File.ReadAllText(Path.Combine(root, file)));
             var methods = model.Types.Count == 0 ? 0 : model.AllMethods.Count();
             Console.WriteLine($"sut   {file} ({model.Types.Count} types, {methods} methods)");
         }
         foreach (var file in Core.Discovery.FileDiscovery.Enumerate(root, config.TestGlobs))
         {
-            var model = parser.Parse(file, File.ReadAllText(Path.Combine(root, file)));
-            var entries = registry.ExtractEntries(model);
-            var frameworks = string.Join("+", registry.Detect(model).Select(a => a.FrameworkId));
-            Console.WriteLine($"test  {file} [{frameworks}] {entries.Count} entries");
+            var model = ParserFor(file).Parse(file, File.ReadAllText(Path.Combine(root, file)));
+            var entries = RegistryFor(file)(model);
+            Console.WriteLine($"test  {file} {entries.Count} entries");
             foreach (var e in entries)
                 Console.WriteLine($"        {e.TestId} {(e.Enabled ? "" : " (disabled)")} @{e.File}:{e.Line}");
         }
