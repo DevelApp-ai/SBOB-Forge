@@ -273,7 +273,21 @@ public static class GeneratePipeline
             package, execs, opens, egress, ingress, coverage,
             grammarLock.ComputeLockHash(), configHash, config.Architectures);
 
-        var yaml = CanonicalSbobEmitter.Emit(ir, options.GeneratorVersion, config.Namespace);
+        string yaml;
+        try
+        {
+            yaml = CanonicalSbobEmitter.Emit(ir, options.GeneratorVersion, config.Namespace);
+        }
+        catch (EmitException) when (!options.Check)
+        {
+            // The refusal message says to inspect the coverage report (TDS 8.4) — write it
+            // so there is something to inspect, then surface the refusal unchanged.
+            var covPath = Path.Combine(options.RepoRoot, "sbob", $"{package.MetadataName}.coverage.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(covPath)!);
+            File.WriteAllText(covPath, EmitCoverage(ir));
+            Console.Error.WriteLine($"sbobforge: wrote {covPath} for inspection");
+            throw;
+        }
         var validationErrors = SBOBForge.Core.Validation.SbobValidator.Validate(yaml);
         if (validationErrors.Count > 0)
             throw new ParseHardError("Emitted SBOB failed self-validation:\n  " +

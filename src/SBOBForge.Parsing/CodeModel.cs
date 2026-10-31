@@ -91,5 +91,10 @@ public enum ArgKind
     Expression,
 
     /// <summary>Literal list/tuple of literals (e.g. subprocess argv, socket address tuples).</summary>
-    List
+    List,
+
+    /// <summary>List/tuple whose first element is a literal but later elements are dynamic.
+    /// Value = the anchored literal argv0 (TDS 5.2 argv0-anchoring: program name is knowable,
+    /// remaining args are not — emitted as the args wildcard).</summary>
+    PartialList
 }

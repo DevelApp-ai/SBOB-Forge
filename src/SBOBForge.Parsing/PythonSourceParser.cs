@@ -15,7 +15,7 @@ namespace SBOBForge.Parsing;
 public sealed class PythonSourceParser : ICodeModelParser
 {
     public const string BackendId = "sbobforge-python311";
-    public const string Version = "1.0.2";
+    public const string Version = "1.0.3";
 
     string ICodeModelParser.BackendId => BackendId;
 
@@ -647,6 +647,9 @@ public sealed class PythonSourceParser : ICodeModelParser
             // list/tuple literal of literals (argv, address tuples)
             if (IsLiteralSequence(toks, out string? joined) && joined != null)
                 return new CallArg(ArgKind.List, joined);
+            // partially-literal list/tuple: argv0 anchor (TDS 5.2 argv0-anchoring)
+            if (IsAnchoredSequence(toks, out string? first) && first != null)
+                return new CallArg(ArgKind.PartialList, first);
             if (toks.Count == 1)
             {
                 var t = toks[0];
@@ -681,6 +684,28 @@ public sealed class PythonSourceParser : ICodeModelParser
             if (items.Count == 0) return false;
             if (!items.All(x => x.Count == 1 && (x[0].Type is Tt.Str or Tt.Number || (x[0].Type == Tt.Name && x[0].Text is "True" or "False" or "None")))) return false;
             joined = string.Join('\u0001', items.Select(x => x[0].Text));
+            return true;
+        }
+
+        /// <summary>List/tuple whose first element is a literal but the sequence is not
+        /// all-literal (List wins for fully literal sequences). Yields the anchored argv0
+        /// (TDS 5.2 argv0-anchoring).</summary>
+        private static bool IsAnchoredSequence(List<Token> toks, out string? first)
+        {
+            first = null;
+            if (toks.Count < 3) return false;
+            bool isList = toks[0].Type == Tt.Op && toks[0].Text == "[" && toks[^1].Type == Tt.Op && toks[^1].Text == "]";
+            bool isTuple = toks[0].Type == Tt.Op && toks[0].Text == "(" && toks[^1].Type == Tt.Op && toks[^1].Text == ")";
+            if (!isList && !isTuple) return false;
+            var items = SplitTopLevel(toks[1..^1], ",");
+            if (items.Count == 0) return false;
+            var t0 = items[0];
+            if (t0.Count != 1) return false;
+            var kind = t0[0].Type;
+            if (kind is not (Tt.Str or Tt.Number)
+                && !(kind == Tt.Name && t0[0].Text is "True" or "False" or "None"))
+                return false;
+            first = t0[0].Text;
             return true;
         }
 

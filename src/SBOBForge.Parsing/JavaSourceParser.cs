@@ -16,7 +16,7 @@ namespace SBOBForge.Parsing;
 public sealed class JavaSourceParser : ICodeModelParser
 {
     public const string BackendId = "sbobforge-java17";
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
 
     string ICodeModelParser.BackendId => BackendId;
 
@@ -675,6 +675,9 @@ public sealed class JavaSourceParser : ICodeModelParser
             // literal array initializer / List.of(...) / new T[]{...}
             if (IsLiteralList(toks, out string? joined) && joined != null)
                 return new CallArg(ArgKind.List, joined);
+            // partially-literal array/List.of: argv0 anchor (TDS 5.2 argv0-anchoring)
+            if (IsAnchoredList(toks, out string? first) && first != null)
+                return new CallArg(ArgKind.PartialList, first);
             return new CallArg(ArgKind.Expression, "");
         }
 
@@ -715,7 +718,27 @@ public sealed class JavaSourceParser : ICodeModelParser
         private static bool IsLiteralList(List<Token> toks, out string? joined)
         {
             joined = null;
-            List<List<Token>>? items = null;
+            if (!TryListItems(toks, out var items)) return false;
+            if (!items.All(x => x.Count == 1 && x[0].Type is Tt.String or Tt.Char or Tt.Number)) return false;
+            joined = string.Join('\u0001', items.Select(x => x[0].Text));
+            return true;
+        }
+
+        /// <summary>Array initializer / List.of whose first element is a literal but the
+        /// sequence is not all-literal (List wins for fully literal sequences). Yields the
+        /// anchored argv0 (TDS 5.2 argv0-anchoring).</summary>
+        private static bool IsAnchoredList(List<Token> toks, out string? first)
+        {
+            first = null;
+            if (!TryListItems(toks, out var items) || items.Count == 0) return false;
+            if (items[0].Count != 1 || items[0][0].Type is not (Tt.String or Tt.Char or Tt.Number)) return false;
+            first = items[0][0].Text;
+            return true;
+        }
+
+        private static bool TryListItems(List<Token> toks, out List<List<Token>> items)
+        {
+            items = new List<List<Token>>();
             if (toks.Count >= 2 && toks[0].Type == Tt.Op && toks[0].Text == "{" && toks[^1].Type == Tt.Op && toks[^1].Text == "}")
                 items = SplitTopLevel(toks[1..^1], ",");
             else if (toks.Count >= 5 && toks[0].Type == Tt.Ident && toks[0].Text == "List"
@@ -728,10 +751,7 @@ public sealed class JavaSourceParser : ICodeModelParser
                 if (openBrace > 1 && toks[openBrace - 1].Type == Tt.Op && toks[openBrace - 1].Text == "]")
                     items = SplitTopLevel(toks[(openBrace + 1)..^1], ",");
             }
-            if (items == null || items.Count == 0) return false;
-            if (!items.All(x => x.Count == 1 && x[0].Type is Tt.String or Tt.Char or Tt.Number)) return false;
-            joined = string.Join('\u0001', items.Select(x => x[0].Text));
-            return true;
+            return items.Count > 0;
         }
 
         internal static List<List<Token>> SplitTopLevel(List<Token> toks, string sep)
