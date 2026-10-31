@@ -1,0 +1,532 @@
+
+# SBOB-Forge — Tests → SBOB Generator
+
+**Technical Design Specification**
+
+**Version:** 1.0 · **Date:** 2026-10-31 · **Status:** Accepted (approved by Lars, 2026-10-31)
+**Repository:** https://github.com/DevelApp-ai/SBOB-Forge (this document lives at `docs/TDS.md`)
+**Author:** Detection Engineering (DevelApp)
+**Source standard:** Software Bill of Behavior (SBOB), spec v0.0.4 ([spec](https://billofbehavior.com/bob/docs/spec/), [repo](https://github.com/k8sstormcenter/bob))
+**Downstream consumer:** [Software-Bill-of-Behavior](https://github.com/DevelApp-ai/Software-Bill-of-Behavior) (SBoB → Wazuh/Kubescape transpiler)
+**Parsing substrate:** [Minotaur](https://github.com/DevelApp-ai/Minotaur) + [Minotaur-Grammars](https://github.com/DevelApp-ai/Minotaur-Grammars)
+
+---
+
+## 1. Scope and objectives
+
+### 1.1 Mission
+
+Build a **deterministic static generator** that reads a package's test suite — across xUnit and every other test framework DevelApp ships — and emits a signed, spec v0.0.4-conformant **SBOB (ContainerProfile)** declaring the **packaged software's intended runtime behavior**. The generated SBOB is:
+
+- **Embedded** in the `.nupkg` / Chocolatey package at build time,
+- **Published** to the SBOB registry (`sbobs/` in the Software-Bill-of-Behavior repo),
+- **Consumed** by the existing transpiler (`sbobctl transpile` → Wazuh drift rules) and, where the package is later containerized, by Kubescape node-agent.
+
+The thesis: the bob project's own framing — *"a software vendor distills all their knowledge of their own testing into a standard file"* — is not a metaphor but a pipeline. Tests are the highest-signal, already-maintained corpus of intended behavior. If extraction from them is **static and canonical**, the SBOB becomes a *pure function of the source tree*: same code ⇒ byte-identical SBOB, rebuildable and drift-gateable in CI like any other generated artifact (org decision #26).
+
+### 1.2 Positioning decision (resolved)
+
+SBOB-Forge is a **standalone tool** that consumes Minotaur as NuGet packages. It is *not* a subpart of the Minotaur repo.
+
+| Option | Verdict | Rationale |
+|---|---|---|
+| Subpart of Minotaur (`minotaur sbob …`) | **Rejected** | Violates Minotaur's architectural separation (StepParser owns parsing; plugins own unparsing/backend-rules only); couples security-tooling release cadence to the compiler-compiler platform; SBOB semantics (kernel-behavior lowering, widening policy, signing) are not grammar concerns. |
+| Node/TypeScript tool next to the transpiler | **Rejected** | Would re-implement multi-language parsing without the Minotaur grammar estate; the transpiler stays a pure *consumer*. |
+| **Standalone C# tool, consumes `DevelApp.Minotaur` + `DevelApp.StepParser` NuGet** | **Selected** | Reuses the cognitive-graph model, plugin manager, and grammar marketplace; SBOB-Forge owns only lifting/emission/signing; AGPL-3.0 (same as Minotaur, both DevelApp-owned). |
+
+Dependency flow: `SBOB-Forge` → `DevelApp.Minotaur` (NuGet, GitHub Packages; CI auth via org secret `PACKAGES_READ_TOKEN`, decision #8) → grammars from Minotaur-Marketplace, **pinned** (§5.3).
+
+### 1.3 Design principles
+
+1. **Determinism from code.** The SBOB is a pure function of `(source tree at pinned SHA, grammar lock, generator version, config)`. No clock, no host paths, no unsorted enumeration, no environment-dependent widening. Byte-identical output in CI and on a laptop.
+2. **Tests are intent; harness is noise.** Only behavior *of the packaged software* is declared. Test-framework machinery (assertions, temp fixtures, mock servers) is classified and excluded — but reported.
+3. **Honest coverage.** What static extraction cannot lift (dynamic values, reflection, untested paths) is **never silently wildcarded**. It is quarantined into a coverage report; the SBOB uses spec §5.4 NULL/NONE semantics deliberately (§8.4).
+4. **Package-bound profiles.** One SBOB per `(package, version, target-os)`, bound via `spec.imageID` = package purl (§4).
+5. **One IR, many uses.** The behavior IR feeds SBOB emission today; the same IR can later feed the transpiler's IR directly, seccomp profiles, or SBOM `evidence` sections without re-parsing.
+6. **Downstream compatibility is a contract.** Output MUST validate against the spec v0.0.4 JSON Schema (as implemented by the Software-Bill-of-Behavior validator) and round-trip through `sbobctl transpile`'s parse/validate/lint stages.
+
+### 1.4 Phase plan
+
+| Phase | Scope | Status |
+|---|---|---|
+| **1** (this document) | .NET/xUnit first, then Java, Python, Go, JS/TS, PHP, PowerShell, Bash, C, C++ adapters; NuGet + Chocolatey binding; embed + registry publish; cosign signing | Design |
+| **2** | `rulePolicies` derivation (§15), endpoints section, dynamic-confirmation mode (optional CI lane that runs the suite under a trace and diffs against the static SBOB) | Outlined |
+| **3** | Feedback loop: runtime drift findings from Wazuh filed back as test gaps ("behavior debt") | Outlined |
+
+---
+
+## 2. Background
+
+### 2.1 The SBOB target model (spec v0.0.4)
+
+A signed, declarative Kubernetes-style YAML resource (`kind: ContainerProfile`) bound to one workload via `spec.imageID` + pod label. Behavioral sections under `spec`:
+
+| Section | Declares | Relevant to test-derived extraction |
+|---|---|---|
+| `execs[]` | permitted child processes: `path` + `args` (`⋯` one arg, `⋯⋯` zero-or-more args, `*` literal in args) | `Process.Start`, `exec.Command`, `subprocess`, `child_process`, shell calls |
+| `opens[]` | permitted file opens: `path` + `flags` (`O_RDONLY`, `O_CREAT`, …) | file APIs — the largest catalog surface |
+| `egress[]` | permitted outbound peers: `dnsNames[]`, `ipAddresses[]`, `ports[]` | HTTP clients, sockets, DNS resolution |
+| `ingress[]` | permitted inbound peers (same shape) | server sockets, listeners |
+| `capabilities[]` | Linux capabilities (`CAP_*`) | rarely test-derivable; Phase 2 (§15) |
+| `endpoints[]` | HTTP endpoints (`:<port>/<path>`, methods, direction) | Phase 2 |
+| `rulePolicies` | who may perform signature-class actions (module-load, namespace-change, …) | Phase 2; v1 leaves NULL |
+
+**Wildcard semantics (spec §5)** — implemented exactly, since the transpiler lints against them: `⋯` (U+22EF, single codepoint) = one path segment; `*` mid-path = zero-or-more segments, trailing = one-or-more; `args` `*` is literal; DNS wildcards per RFC 4592 shapes; **absent (NULL) ≠ explicit-empty (NONE)** — NULL is engine-learn posture, NONE is declared-zero-activity with hard-violation semantics.
+
+### 2.2 Test framework matrix (extraction scope)
+
+| Language | Frameworks (priority) | Entry cues | Ignored-test cues |
+|---|---|---|---|
+| C#/.NET | **xUnit v2/v3 (primary)**, NUnit 3/4, MSTest v2/v3 | `[Fact]`, `[Theory]`, `[Test]`, `[TestMethod]` | `Skip=`, `[Ignore]`, `Assert.Skip` |
+| Java | **JUnit 5**, JUnit 4, TestNG | `@Test`, `@ParameterizedTest` | `@Disabled`, `@Ignore`, `enabled=false` |
+| Go | `testing` (stdlib) + testify | `func TestXxx(t *testing.T)` | `t.Skip`, `t.Skipf` |
+| PHP | **PHPUnit 10/11** | `test*` methods, `#[Test]`, `@test` | `markTestSkipped`, `@requires` |
+| Python | **pytest**, unittest | `test_*` functions/methods | `@pytest.mark.skip`, `@unittest.skip`, `xfail` |
+| JavaScript | **Jest**, Mocha, node:test | `describe/it/test` | `.skip`, `xit`, `xdescribe` |
+| TypeScript | **Jest**, Vitest | same as JS | same as JS |
+| PowerShell | **Pester v5** | `Describe`/`It` | `-Skip` |
+| Bash | **Bats** (bats-core) | `@test`, `bats` files | `skip` |
+| C | GoogleTest, Unity, CMocka | `TEST()`, `RUN_TEST` | `GTEST_SKIP`, disabled fixtures |
+| C++ | **GoogleTest**, Catch2 v3, doctest | `TEST()`, `TEST_CASE` | `SKIP()`, `[!mayfail]` |
+
+Ignored tests are **excluded** from intent but **reported** in the coverage manifest ("tested-no-longer" behavior).
+
+### 2.3 Grammar estate (Minotaur-Grammars inventory)
+
+Present today: `csharp10`, `java/java17/java8`, `go119`, `php`, `python311`, `javascript(-es2022)`, `typescript`, `c17`, `cpp20`, plus Ruby/Rust/Perl and others. **Gaps for this tool: `powershell`, `bash`.** Strategy in §5.4: interim deterministic lexical adapters, target state = authored grammars committed to Minotaur-Grammars (the repo is the single home; marketplace distribution keeps the tool lean).
+
+---
+
+## 3. System architecture
+
+### 3.1 Pipeline overview
+
+```mermaid
+flowchart TD
+  repo["Repo checkout (pinned SHA)"] --> lock["Grammar lock verify<br/>(marketplace tarballs, sha256)"]
+  lock --> disc["Discovery<br/>(sorted, config-driven)"]
+  disc --> parse["Parse via Minotaur<br/>StepParser -> CognitiveGraph"]
+  parse --> adapt["Framework adapters<br/>-> Test Entry Model"]
+  adapt --> lift["Behavior catalog lifting<br/>API -> exec/open/conn/listen"]
+  lift --> reso["Value resolution<br/>constant folding + widening tiers"]
+  reso --> attr["SUT attribution<br/>harness noise -> coverage report"]
+  attr --> ir["Behavior IR v1<br/>(normalized, hashed)"]
+  ir --> emit["Canonical emitter<br/>spec v0.0.4 YAML"]
+  emit --> sign["cosign signature (org #14)"]
+  sign --> embed["Embed in .nupkg / choco"]
+  sign --> reg["Registry PR to sbobs/"]
+```
+
+### 3.2 Components
+
+| Component | Form | Responsibility |
+|---|---|---|
+| `sbobforge` | .NET CLI tool (`DevelApp.SBOBForge`, `dotnet tool install`) | End-to-end pipeline; subcommands §13 |
+| Discovery | C# module | Deterministic file/test enumeration from `sbobforge.json` globs |
+| Minotaur integration | Reference to `DevelApp.Minotaur` / `DevelApp.StepParser` | `StepParserIntegration.ParseToCognitiveGraphAsync`, `LanguagePluginManager.GetPluginByExtension`, CognitiveGraph V2 for large repos |
+| Framework adapters | One class per framework, registry pattern (M-E-F-free; fixed table) | Test-entry identification, skip-filter, SUT-call collection |
+| Behavior catalog | Declarative data (JSON embedded in tool, versioned) | API → SBOB primitive lowering (§7) |
+| Behavior IR | C# types, versioned (`sbobIrVersion: 1`) | Language-neutral event model + provenance |
+| Canonical emitter | C# module | Byte-stable YAML per §8 |
+| Coverage report | JSON sidecar | Lift/quarantine/noise inventory, per entry provenance |
+| Provenance sidecar | JSONL | entry → (file:line, test id, tier, grammar version) map for `explain` |
+| CI wiring | Composite action + product-repo workflows | `--check` drift gate (#26), embedding, registry PR, signing |
+
+### 3.3 Repository layout
+
+```
+SBOB-Forge/
+├── src/
+│   ├── SBOBForge/               # CLI, pipeline orchestration
+│   ├── SBOBForge.Core/          # IR, emitter, resolution, hashing
+│   ├── SBOBForge.Catalog/       # behavior catalog data + loader
+│   ├── SBOBForge.Adapters.*/    # per-language/framework adapter projects
+│   └── SBOBForge.Tests/         # unit + golden + equivalence corpus tests
+├── catalog/                     # language catalog source (JSON), committed
+├── examples/                    # dogfood fixtures per language
+└── docs/TDS.md                  # this document
+```
+
+Generated SBOBs live in **each product repo** at `sbob/<package>.<target-os>.sbob.yaml` (committed, authoritative, drift-gated per #26), mirrored to the central registry.
+
+---
+
+## 4. Binding model: `imageID` = package purl
+
+**Decision:** the SBOB binds to the *package identity*, expressed as a [purl](https://github.com/package-url/purl-spec) in `spec.imageID`:
+
+| Package type | `spec.imageID` |
+|---|---|
+| NuGet | `pkg:nuget/develapp.minotaur@1.32.0` |
+| Chocolatey | `pkg:choco/<lowercased-id>@<version>` (org extension; `choco` is not a core purl type) |
+
+Rules:
+
+- The purl is fully normalized at emission: lowercase name, version = the exact package version (no ranges), no qualifiers except `?repository_url=` when consuming from a private feed (emitted only behind a config flag, since it harms reproducibility across mirrors).
+- `metadata.name` = purl name with `.` → `-` (`develapp-minotaur`); `metadata.namespace` = product line (`develapp`); `kubescape.io/managed-by: User` + `develapp.io/binding: package-purl` annotations mark provenance so a learned-profile collector never garbage-collects it (mirrors upstream user-profile convention).
+- **Conformance note:** spec v0.0.4 §4.1 says `imageID` is an OCI image reference "ideally pinned by digest". A purl is a deliberate, documented deviation. Because verifiers bind via label (`kubescape.io/user-defined-profile: <metadata.name>`) and the binding is name-based, this works operationally; the transpiler's validator needs a one-line `imageID` pattern extension (tracked as a Software-Bill-of-Behavior issue). Upstream contribution of a `package-profile` variant is an open-issue candidate with the bob project (§16).
+- **Container composition path:** when a package is later baked into an image, CI runs `sbobforge generate --image <ref@digest>` in that image's repo; the test-derived sections are reused from the package profile and re-bound to the real image ID. The package profile remains the canonical intent record.
+
+`--target-os` selects path policy per profile: `linux` (default for NuGet — org platform is Talos, decision #9) and `windows` (default for Chocolatey). One document per `(package, target-os)`; `spec.architectures` reflects the package's RID set where applicable.
+
+---
+
+## 5. Discovery and parsing layer
+
+### 5.1 Discovery
+
+- Input: `sbobforge.json` in the package repo root: package purl, SUT project/file globs, test globs, framework toggles, path policies (§7.3), target-os set.
+- Enumeration is **strictly ordered**: walk entries sorted by ordinal UTF-16 string comparison of normalized relative paths; no `Directory.Enumerate*` unordered APIs; results are a stable list. CI runners with different filesystems produce identical discovery output.
+
+### 5.2 Parsing
+
+- Each discovered file is parsed via Minotaur into a CognitiveGraph (`ParserConfiguration.GraphVersion = V2` above size thresholds — deterministic given fixed thresholds; the thresholds are constants, not tunables, so graph shape is stable).
+- Language selection: `GetPluginByExtension`; embedded languages (JS-in-HTML, etc.) via Minotaur's embedded-grammar support.
+- Parse failures are **hard errors** (exit 2), never best-effort skips: a file that cannot be parsed could hide behavior, so the tool refuses to emit a silently incomplete SBOB. `--allow-parse-error <path>` exists for vendored fixtures, recorded in the coverage report.
+
+### 5.3 Grammar lock
+
+`sbobforge.lock.json`, committed in each product repo:
+
+```json
+{
+  "sbobIrVersion": 1,
+  "grammars": {
+    "csharp10":  { "version": "1.19.0", "sha256": "…" },
+    "java17":    { "version": "1.14.2", "sha256": "…" },
+    "typescript":{ "version": "1.9.1",  "sha256": "…" }
+  },
+  "minotaur": { "version": "1.32.0" }
+}
+```
+
+- `generate --frozen` (required in CI): fails if the installed grammar set ≠ lock, or any tarball sha256 mismatches. Grammars resolve from Minotaur-Marketplace; the lock file is updated only by `sbobforge lock --update`, reviewed like any dependency bump (PR-only, decision #28).
+- The lock's sha256 feeds the `develapp.io/grammar-lock-sha256` annotation, so a verifier can tell *why* two SBOBs of the same code differ.
+
+### 5.4 PowerShell and Bash (grammar gap)
+
+- **Phase A (M4):** deterministic lexical adapters — a fixed token scanner (not regex-over-the-world) recognizing the catalog's call shapes (`Start-Process`, `&`, `Invoke-WebRequest`, `Get-Content` / `curl`, `wget`, `nc`, redirections). Marked `parser: lexical` in the coverage report; the SBOB annotations record it, so consumers know the confidence tier.
+- **Phase B (M5+):** author `powershell` and `bash` grammars in Minotaur-Grammars (matching repo structure + `minotaur-metadata.json`), pin via lock, delete the lexical adapters. If Minotaur's grammar-generation-from-source is used to bootstrap them, the *generated grammar is committed* to Minotaur-Grammars first — generated-at-analysis-time grammars would be a nondeterminism source and are forbidden.
+
+---
+
+## 6. Framework adapter contract
+
+Every adapter (one per framework) implements:
+
+```
+1. IdentifyTestEntries(graph) -> TestEntry[]
+     { testId, file, enabled, entryMethod, classChain, theoryCases }
+2. CollectHarnessCalls(testEntry) -> classified set
+     { assert, fixture, tempArtifact, frameworkService }
+3. CollectSutCalls(testEntry) -> InvocationSite[]
+     { callTarget, arguments, file, line, resolvesToSut: bool }
+```
+
+- **testId** is canonical: `"<relpath>::<Class>::<Method>[::<case>>"` — stable across machines, used by the provenance sidecar.
+- **Theory/parameterized tests**: each case is a separate TestEntry (cases are part of intent); case values participate in constant folding (a `[InlineData("/etc/app/config.json")]` gives a Tier-L literal).
+- **Skip-filter**: disabled tests are excluded from intent; their behavior model diff is listed in the coverage report as `retired` (if it had contributed in the previous committed SBOB, `--check` mode surfaces it — a deliberate SBOB change, reviewed in the PR).
+- **Fixture/setup code** (`[SetUp]`, `beforeEach`, `setup()`, `-BeforeEach`) lifts like test bodies: setup is intent-bearing (a server fixture that binds a port *is* SUT behavior when the fixture drives the SUT's listen API; it is harness noise when it only arranges test files — resolution per §7.4 attribution).
+
+---
+
+## 7. Behavior catalog (API → SBOB lowering)
+
+### 7.1 Catalog shape
+
+Declarative JSON, one file per language, committed and versioned with the tool:
+
+```
+match:    { kind: methodCall|functionCall|operator, languageType, method,
+            argumentSlots }
+lower:    { primitive: exec|open|connect|listen|delete|dns,
+            pathSlot, flagsFrom, hostSlot, portSlot }
+scope:    { sutOnly | harness | ambiguous }
+```
+
+### 7.2 Core lowering tables (representative, not exhaustive)
+
+**Exec:**
+
+| Language | API | → `execs[]` |
+|---|---|---|
+| C# | `Process.Start`/`ProcessStartInfo.FileName/.Arguments` | `path` + `args` vector (argv0 anchored) |
+| Java | `Runtime.exec`, `ProcessBuilder(...)` | `path` + `args` |
+| Go | `exec.Command(name, args...)` | `path` (PATH-resolved per policy §7.3), `args` |
+| Python | `subprocess.*`, `os.system` (shell → `/bin/sh -c …`) | `path`, `args`; `shell=True` lowers to `/bin/sh` + `-c` + literal arg or quarantine |
+| JS/TS | `child_process.spawn/exec/execFile` | `path`; `exec` lowers via `/bin/sh` |
+| PHP | `exec`, `shell_exec`, `proc_open`, `popen` | shell-mediated; literal first token → PATH policy |
+| PowerShell | `Start-Process`, call operator `&`, `Invoke-Expression` | `path`/`args`; `Invoke-Expression` with non-constant arg = quarantine (RCE-shaped, must be reviewed) |
+| Bash | command words | first word via PATH policy |
+| C | `execve`, `execvp`, `system`, `popen` | direct / shell-mediated |
+| C++ | `std::system`, `popen`, `fork+exec` | direct |
+
+**Open (flags mapping):**
+
+| API form | `flags[]` |
+|---|---|
+| read (`FileMode.Open`+`FileAccess.Read`, `open(r)`, `fopen("r")`, `os.Open`, `Get-Content`, `fs.readFile*`, `ifstream`) | `[O_RDONLY]` |
+| write-truncate (`FileMode.Create`, `"w"`, `os.Create`, `Set-Content`, `fs.writeFile*`) | `[O_WRONLY, O_CREAT, O_TRUNC]` |
+| append (`FileMode.Append`, `"a"`, `O_APPEND` forms, `Add-Content`) | `[O_WRONLY, O_CREAT, O_APPEND]` |
+| read-write (`"r+"`, `FileAccess.ReadWrite`, `O_RDWR` forms) | `[O_RDWR]` |
+| directory ops (`Directory.Create*`, `mkdir`, `New-Item -ItemType Directory`) | `[O_DIRECTORY, O_CREAT]` entry on the directory path |
+| delete (`File.Delete`, `os.Remove`, `unlink`, `rm`) | **not representable in v0.0.4 `opens`** → recorded in coverage report as `unrepresentable: delete` (§15) |
+
+**Network:**
+
+| Language | API | → section |
+|---|---|---|
+| C# | `HttpClient`/`WebRequest` with constant `Uri` | `egress[].dnsNames[]` + `ports[]` (scheme default: 80/443; explicit port kept) |
+| Java | `HttpClient`, `HttpURLConnection`, `Socket(host, port)` | egress dns/ip + ports |
+| Go | `net.Dial`/`http.Get` | egress; `net.Listen` → `ingress[].ports[]` |
+| Python | `requests.*`, `urllib`, `http.client`, `socket.create_connection` | egress |
+| JS/TS | `fetch`, `http/https.request`, `net/tls.connect`; server: `net.Server.listen`, `createServer.listen` | egress / ingress |
+| PHP | `curl_*`, `file_get_contents("http…")`, streams | egress |
+| PowerShell | `Invoke-WebRequest`, `Invoke-RestMethod`, `TcpClient` | egress |
+| Bash | `curl`, `wget`, `nc`, `ssh` | egress (`ssh` also candidate rulePolicy, Phase 2) |
+| C/C++ | `connect(2)` with constant `sockaddr`, `getaddrinfo` with constant host; `listen(2)` | egress / ingress |
+
+DNS constants: lowercase, IDN → punycode (deterministic IDNA2008), FQDN trailing dot per spec recommendation.
+
+### 7.3 Path policy (the Windows↔POSIX seam)
+
+Test code is full of host-shaped paths (`Path.GetTempPath()`, `./testfixtures/…`, `C:\…`). Tests run anywhere; the SBOB describes a *deployment*. Resolution tiers:
+
+| Tier | Condition | Emission |
+|---|---|---|
+| **L (literal)** | Argument constant-folds to an absolute path/URL literal **inside SUT code** (not the test) | Literal entry |
+| **P (pattern)** | Value depends on a *declared placeholder*: package root, config dir, data dir, temp dir — per `pathPolicies` in `sbobforge.json` | Mapped wildcard entry, e.g. package root → `/app/⋯`, config → `/etc/<name>/⋯` |
+| **Q (quarantine)** | Cannot be resolved statically (env vars, reflection, `Path.Combine(temp, …)`, non-constant `Invoke-Expression`) | **No SBOB entry.** Coverage-report row with provenance. `--strict` fails the build on Q>0; default is warn. |
+
+`--target-os windows` keeps Windows-native absolute paths (`C:\ProgramData\…`) — consumed by the transpiler's Windows/Sysmon lane; `--target-os linux` applies the POSIX policies above. The mapping table itself is config data committed in the repo, so it is reviewed like code and stable per target.
+
+### 7.4 SUT attribution
+
+- The **SUT boundary** = the projects/files that the packaging step ships (csproj → nupkg contents; choco `tools/` payload), declared in `sbobforge.json`.
+- A lifted behavior event counts as intent **iff its call site resolves into the SUT boundary**, reached from an enabled test entry through the call graph over the CognitiveGraph (bounded, deterministic traversal: sorted worklist, memoized).
+- Calls made by the test itself directly against the OS (e.g., the test spawns a docker-compose container) are `harness` — excluded from sections, listed in the coverage report as `test-harness noise`, because at runtime nobody will execute the test suite.
+- Mocks/stubs never lower: they call no OS APIs on the SUT's behalf. If a test mocks *away* a real dependency (e.g., mocks the HTTP client), the SUT's outbound behavior is **under-declared** — flagged in the coverage report as `mock-shadowed: egress`, a leading false-positive source downstream. (This is the honest-coverage principle: better a visible warning than a silent hole.)
+- Reflection / dynamic dispatch / plugin loading (`RuntimePluggableClassFactory`-style factories, DI, `Assembly.Load`): the call graph edge is unresolved → affected targets go to quarantine with the reason; scanning the DI registration table (a fixed, well-known pattern set) recovers the common case deterministically.
+
+---
+
+## 8. Emission: canonical SBOB output
+
+### 8.1 Deterministic canonicalization
+
+- YAML emitted by a hand-rolled writer (no YAML library object-graph traversal, which is unordered by nature): fixed section order `capabilities, endpoints, execs, opens, ingress, egress, rulePolicies`; fixed field order per entry; LF line endings; 2-space indent; block style; **no anchors/aliases/tags**; every list sorted by total-order key (`path` ordinal asc, then `flags` lexicographic; `args` as tuple compare).
+- `⋯` is always the single codepoint U+22EF — never `...` (a three-dot run MUST be rejected by the emitter's self-lint, mirroring `bobctl validate` behavior).
+- Sections with no lifted entries are **omitted** (NULL semantics — engine-learn posture per §5.4).
+- **NONE (`[]`) is never auto-generated.** Declaring zero-activity is a human assertion; the tool refuses to invent it. `--declare-empty <section>` exists behind explicit config with a required comment string, recorded in the coverage report.
+
+### 8.2 Example (illustrative)
+
+```yaml
+apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
+kind: ContainerProfile
+metadata:
+  name: develapp-minotaur
+  namespace: develapp
+  annotations:
+    kubescape.io/managed-by: User
+    develapp.io/binding: package-purl
+    develapp.io/generator: sbobforge@0.1.0
+    develapp.io/grammar-lock-sha256: 9f2c41…
+    develapp.io/behavior-hash: 4a71b0…
+spec:
+  architectures: [amd64, arm64]
+  imageID: pkg:nuget/develapp.minotaur@1.32.0
+  execs:
+    - path: /usr/share/dotnet/dotnet
+      args: [dotnet, "⋯⋯"]
+  opens:
+    - path: /usr/lib/dotnet/⋯/*
+      flags: [O_RDONLY]
+  ingress:
+    - identifier: minotaur-evidence
+      type: external
+      ports:
+        - { port: 8080, protocol: TCP }
+```
+
+### 8.3 Provenance and hashing
+
+- `develapp.io/behavior-hash` = sha256 over the **normalized IR** (not the YAML text): version tag, sorted event tuples with tiers, grammar-lock hash, config hash. Two runs over the same tree can only differ if one of those changed — the hash makes the difference attributable.
+- Provenance sidecar (`sbob/<package>.provenance.jsonl`): one record per emitted entry — `testId`s, file:line, tier, grammar, catalog rule id. Powers `sbobforge explain /etc/ld.so.cache` → "opened in Minotaur.Parser.DynamicLinkerProbe, exercised by 12 xUnit facts; Tier L".
+
+### 8.4 Deliberate defaults table
+
+| Situation | Emission posture |
+|---|---|
+| No tests lift any behavior for a section | Section omitted (NULL) |
+| Every candidate entry quarantined | Section omitted + coverage report `section-shadowed` warning (downstream drift will be noisy — surface it) |
+| Skipped test previously contributed entries | `--check` diff shows removal; PR review decides re-add vs retire |
+| Unrepresentable primitives (delete, chmod, symlink, rename) | Coverage report only (§15) |
+| `rulePolicies` | Omitted in v1 (NULL). Nothing in a test suite of the supported frameworks statically evidences kernel signature-class behavior at this tier. |
+
+---
+
+## 9. Determinism contract
+
+**Definition:** for pinned `(source SHA, sbobforge.json, sbobforge.lock.json, tool version, --target-os)`, output is byte-identical on any machine, any filesystem, any CI runner, any time.
+
+| Nondeterminism source | Mitigation |
+|---|---|
+| Filesystem enumeration order | Ordinal-sorted discovery (§5.1) |
+| Clock | No timestamps in output; `behavior-hash` is content-derived; registry PR carries the version from the package, not from generation time |
+| Host paths | Repo-relative provenance only; output paths come from policies/literals, never `Directory.GetCurrentDirectory` |
+| Culture | `Ordinal`/`OrdinalIgnoreCase` comparisons everywhere; invariant culture for formatting; static analysis flags `ToLower()` culture usages in code review |
+| YAML library ordering | Hand-rolled canonical writer (§8.1) |
+| Grammar versions | Lock file + `--frozen` + sha256 (§5.3) |
+| HashMap iteration | All aggregation steps sort before emission; analyzer rule forbids `Dictionary` iteration in emission path |
+| PATH resolution of exec names | Never resolved against the *host* PATH; a committed `execPathPolicy` table maps bare names (`dotnet`, `sh`, `git`) to declared runtime locations; unknown names → quarantine |
+| CognitiveGraph V1/V2 auto-selection | Auto thresholds are fixed constants; selected version recorded in provenance |
+
+Enforcement (org decision #26):
+
+1. **Golden-file tests** in SBOB-Forge CI: every fixture repo in `examples/` regenerates byte-identical SBOBs.
+2. **Product-repo drift gate**: CI runs `sbobforge generate --check --frozen --strict`; byte drift against the committed `sbob/*.sbob.yaml` fails the build; the fix is re-running the generator, never hand-editing (exact #26 wording).
+3. **Cross-language equivalence corpus**: the same behavioral program expressed in every supported language/framework must yield identical `execs/opens/egress` sections — this is the strongest guard against language-adapter drift.
+
+---
+
+## 10. Validation, signing, distribution
+
+### 10.1 Validation lane (CI)
+
+1. `sbobforge validate` — structural validation equivalent to spec v0.0.4 JSON Schema (+ purl `imageID` extension), self-lint for `⋯` misuse, arg-wildcard legality.
+2. Cross-validation with the **Software-Bill-of-Behavior** transpiler: CI checks out that repo and runs its parse/validate/lint stages over the emitted SBOB (Node ≥ 22 per org decision #20). If the transpiler's lint policy caps reject an entry (e.g. wildcard breadth), the failure routes here, not downstream.
+3. `bobctl validate` (upstream, when available for the pinned release) as a tertiary conformance check.
+
+### 10.2 Signing
+
+- cosign, per org decision #14 (images and artifacts are cosign-signed; same key/identity flow). Signature covers SBOB + provenance sidecar; `bundleVersion`/`behavior-hash` bind the two.
+- Keyless (OIDC) signing in CI with the repo workflow identity is preferred; verification instructions land in the registry PR description.
+
+### 10.3 Packaging & shipping (both, per decision)
+
+| Channel | Mechanism |
+|---|---|
+| **NuGet embed** | Pack stage includes `sbob/<package>.<os>.sbob.yaml` + provenance via `<None Include="sbob\*.yaml" Pack="true" PackagePath="sbob">`; consumers and pipeline scanners can read the profile straight from the installed package |
+| **Chocolatey embed** | `choco pack` includes `tools/sbob/*.sbob.yaml`; `chocoInstall`/`chocoUninstall` scripts are **not** modified — SBOB is data, not behavior |
+| **Registry publish** | Workflow opens a squash-merged PR (decision #28) adding/updating `sbobs/nuget/<name>.yaml` / `sbobs/choco/<name>.yaml` in Software-Bill-of-Behavior, gated by the repo's existing `sbob-diff-gate` action so behavior changes between versions show as reviewable diffs |
+| **OCI path (later)** | When a package is baked into an image, the same generator emits the image-bound profile into the image repo (`sbob/`), consumed by Kubescape node-agent; signed and stored alongside image SBOM |
+
+---
+
+## 11. IR summary
+
+```csharp
+record SbobIr(
+    int SbobIrVersion,
+    PackageIdentity Package,          // purl, targetOS
+    FrozenSet<ExecEvent> Execs,       // path, args, argv0Anchored, tier, provenance[]
+    FrozenSet<OpenEvent> Opens,       // path, flags, tier, provenance[]
+    FrozenSet<NetEvent> Egress,       // dns|ip, port, proto, tier, provenance[]
+    FrozenSet<NetEvent> Ingress,
+    CoverageReport Coverage,          // quarantined[], noise[], retired[], unrepresentable[]
+    string GrammarLockHash, string ConfigHash);
+```
+
+Events carry tier (L/P/Q — Q events live only in `Coverage`) and provenance references, all sorted at construction; hashing runs over the sorted event sets only, so adding a provenance record for an existing entry does **not** change `behavior-hash` (review noise stays low; changing an entry does).
+
+---
+
+## 12. Delivery workflow (CI)
+
+```mermaid
+sequenceDiagram
+  participant CI as GitHub Actions (product repo)
+  participant SF as sbobforge
+  participant Gate as sbob-diff-gate action
+  participant Reg as Software-Bill-of-Behavior (sbobs/)
+  CI->>SF: generate --check --frozen --strict
+  SF-->>CI: byte-drift verdict (fails on drift, #26)
+  CI->>SF: generate (on merged main, post-version-bump)
+  SF-->>CI: SBoB + provenance + coverage + cosign sig
+  CI->>Gate: diff vs previous released SBoB
+  CI->>Reg: PR adding sbobs/nuget/<name>.yaml (#28)
+  Reg-->>CI: Wazuh-transpile lane re-validates the profile
+```
+
+Branch protection on `main` (decision #6), squash PRs (#28), CodeQL + Dependabot on the public SBOB-Forge repo (#7).
+
+---
+
+## 13. CLI reference
+
+```
+sbobforge lock [--update]                 # write/verify sbobforge.lock.json
+sbobforge scan [--framework …]            # discovery + parse report, no emission
+sbobforge generate [--check] [--frozen] [--strict]
+                   [--target-os linux|windows|all] [--image <ref@digest>]
+sbobforge validate <file…>                 # schema + self-lint + purl check
+sbobforge explain <path-or-entry>          # provenance lookup
+sbobforge version                         # tool + IR + catalog versions
+```
+
+Exit codes: `0` ok · `2` parse/validation hard error · `3` drift detected (`--check`) · `4` quarantine non-empty (`--strict`) · `5` lock mismatch (`--frozen`).
+
+---
+
+## 14. Testing strategy (the generator's own tests)
+
+1. **Unit**: catalog matching, flags mapping, IDNA/punycode, canonical writer ordering, tier classification.
+2. **Golden fixtures**: `examples/<lang>-<framework>/` micro-repos per matrix cell; committed SBOBs are the assertions; byte-identical regeneration required (dogfood: one fixture is DevelApp.StepParser's real suite).
+3. **Cross-language equivalence corpus**: ~20 behavior scenarios (open-read, open-append, spawn with args, https call, listen, mocked-egress…) each implemented in all 11 languages × primary frameworks; assert identical emitted sections.
+4. **Negative corpus**: `⋯` misuse, args `*` literalness, NULL-vs-NONE, quarantine triggers — must fail validate with the documented codes.
+5. **Downstream replay**: emitted fixtures run through the Software-Bill-of-Behavior transpiler CI lane (pin its main SHA in SBOB-Forge's workflow).
+
+---
+
+## 15. Coverage, limitations, honest gaps
+
+| Gap | Handling in v1 |
+|---|---|
+| `rulePolicies`, `capabilities`, `endpoints` | Not test-derivable at this extraction tier; omitted (NULL). Phase 2 derives `capabilities` from capability-manipulation APIs in tests and `rulePolicies` from catalog entries matching signature-class syscall shapes (ptrace tests, memfd tests, module-load tests) |
+| Unrepresentable primitives: delete, rename, symlink, chmod, xattr | Coverage report only; upstream spec issue candidate (§16) |
+| Untested code paths | **Fundamental scope limit**: an SBOB from tests declares *tested* behavior. Untested paths are invisible to the generator and will produce runtime drift alerts downstream. The coverage report's `package-files-analyzed` vs `files-with-intent` ratio makes this visible per package; the intended mitigation is Phase 3's behavior-debt loop, not silent wildcarding |
+| Dynamic confirmation | Phase 2 optional lane: run the suite under `strace`-equivalent tracing in a clean container, diff observed kernel behavior vs static SBOB; produces a conformance score per package — never mutates the SBOB (that would break the determinism contract) |
+
+---
+
+## 16. Milestone plan and open issues
+
+Milestones follow org decision #27 (milestone issues close when capabilities are implemented; polish/verification continues as ordinary issues).
+
+| Milestone | Scope | Dogfood target |
+|---|---|---|
+| M1 | Tool skeleton, lock, discovery, xUnit adapter, .NET catalog, IR, canonical emitter, golden tests | DevelApp.Minotaur (`sbob/develapp-minotaur.linux.sbob.yaml`) |
+| M2 | JUnit 5/TestNG + pytest adapters + catalogs | a DevelApp Java/Python artifact |
+| M3 | Go + JS/TS (Jest/Vitest) | — |
+| M4 | PHP + PowerShell/Bash lexical adapters | — |
+| M5 | C/C++ (GoogleTest, Catch2; `c17`/`cpp20` grammars); PowerShell/Bash authored grammars | — |
+| M6 | Cosign signing, nupkg/choco embedding, registry PR automation, `sbob-diff-gate` wiring, transpiler replay lane | full pipeline live |
+| M7 | Cross-language equivalence corpus, coverage report v1, `explain` | — |
+
+**Open issues**
+
+1. Upstream (bob project): contribute the package-purl binding / `package-profile` variant of the spec; propose `delete`-class primitives for a future spec version. The 2027 CNCF goal doesn't cover NuGet/Chocolatey distribution — this is a differentiable contribution.
+2. Software-Bill-of-Behavior: extend the validator's `imageID` pattern for `pkg:` purls; decide whether the drift ruleset binds to `metadata.name` (recommended) instead of parsing `imageID`.
+3. Minotaur-Grammars: `powershell`/`bash` grammar authoring (M5 dependency).
+4. SBOB-Forge internal: argv0-anchoring policy when exec args are parameterized (`args: [argv0, ⋯⋯]` vs full quarantine) — needs real-suite data from M1 before freezing.
+5. ~~Naming placeholder pending Lars's call~~ — **Resolved 2026-10-31:** `SBOB-Forge` confirmed (repo created); CLI binary remains `sbobforge`.
+
+**Risks**
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Static extraction under-declares → downstream drift FPs | High | Honest-coverage principle (§8.4, §15); mock-shadowed warnings; Phase 2 dynamic lane |
+| Grammar gaps/drift across 11 languages | Medium | Lock + sha256; equivalence corpus; lexical adapters marked as reduced confidence |
+| Upstream spec churn (v0.0.4 is Proposed-stage, "frequent rewriting" per bob README) | Medium | Pin spec version in the validator (as the transpiler does); spec-bump is an explicit PR |
+| CognitiveGraph V2 memory on huge monorepos | Medium | Size thresholds; per-package generation scope (one package per run by design) |
+
+---
+
+## 17. References
+
+- SBOB spec v0.0.4 — <https://billofbehavior.com/bob/docs/spec/> · reference repo: <https://github.com/k8sstormcenter/bob> (example profiles under `example/`)
+- Software-Bill-of-Behavior (SBoB → Wazuh transpiler, this generator's downstream contract): <https://github.com/DevelApp-ai/Software-Bill-of-Behavior>
+- Minotaur (parsing substrate): <https://github.com/DevelApp-ai/Minotaur> · grammars: <https://github.com/DevelApp-ai/Minotaur-Grammars>
+- purl spec: <https://github.com/package-url/purl-spec>
+- Org decisions applied: #6, #7, #8, #9, #14, #20, #26, #27, #28 (DevelApp-ai/DevelApp-Repo-Global)
