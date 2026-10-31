@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using SBOBForge.Parsing;
 
+using SBOBForge.Adapters;
+
 namespace SBOBForge.Adapters.DotNet;
 
 /// <summary>
