@@ -1,0 +1,5 @@
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:com.example.ng.sut.ToolRunner.runGitStatus",  "File": "sut/com/example/ng/ToolRunner.java",  "Line": 7,  "Tier": "Pattern",  "Rule": "java.lang.runtime.exec"}
+{  "Primitive": "open",  "Identifier": "/var/log/ng-app.log",  "TestId": "com.example.ng.tests.NgTests.appendsLog",  "File": "sut/com/example/ng/LogWriter.java",  "Line": 9,  "Tier": "Literal",  "Rule": "java.io.fileoutputstream"}
+{  "Primitive": "open",  "Identifier": "/var/log/ng-app.log",  "TestId": "sut:com.example.ng.sut.LogWriter.appendLog",  "File": "sut/com/example/ng/LogWriter.java",  "Line": 9,  "Tier": "Literal",  "Rule": "java.io.fileoutputstream"}
+{  "Primitive": "open",  "Identifier": "/var/log/ng-app.log",  "TestId": "sut:com.example.ng.sut.LogWriter.rewriteLog",  "File": "sut/com/example/ng/LogWriter.java",  "Line": 15,  "Tier": "Literal",  "Rule": "java.io.fileoutputstream"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:com.example.ng.sut.StatusClient.openStatusSocket",  "File": "sut/com/example/ng/StatusClient.java",  "Line": 9,  "Tier": "Literal",  "Rule": "java.net.socket"}

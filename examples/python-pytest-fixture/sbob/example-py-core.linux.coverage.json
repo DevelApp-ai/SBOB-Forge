@@ -1,0 +1,53 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "2e216ea290829cf1f2d5e5bac377552a974b8b5ee57d66f6ab940bfad8044dff",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 3,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an interpolated string, not a constant literal",
+      "File": "sut/example_py_core/config_store.py",
+      "Line": 18,
+      "TestId": "sut:config_store.load_user",
+      "Rule": "py.builtin.open"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/test_config_store.py",
+      "Line": 11,
+      "TestId": "tests/test_config_store.py::test_legacy_path"
+    },
+    {
+      "Description": "test helper (not an entry method): .open",
+      "File": "tests/test_config_store.py",
+      "Line": 12,
+      "TestId": ""
+    },
+    {
+      "Description": "harness API: f.write",
+      "File": "tests/test_config_store.py",
+      "Line": 19,
+      "TestId": "tests/test_config_store.py::test_writes_log[0]"
+    },
+    {
+      "Description": "harness API: f.write",
+      "File": "tests/test_config_store.py",
+      "Line": 19,
+      "TestId": "tests/test_config_store.py::test_writes_log[1]"
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/example_py_core/config_store.py",
+      "Line": 27,
+      "TestId": "sut:config_store.clean_cache",
+      "Rule": ""
+    }
+  ]
+}

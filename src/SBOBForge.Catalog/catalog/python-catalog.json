@@ -1,0 +1,36 @@
+{
+  "id": "python",
+  "version": 1,
+  "rules": [
+    { "id": "py.builtin.open",      "kind": "openModeString", "method": "open" },
+    { "id": "py.os.makedirs",       "kind": "open",             "receiver": "os",     "method": "makedirs", "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "py.os.mkdir",          "kind": "open",             "receiver": "os",     "method": "mkdir",    "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "py.os.remove",         "kind": "unrepresentable",  "receiver": "os",     "method": "remove",   "unrepresentablePrimitive": "delete" },
+    { "id": "py.os.unlink",        "kind": "unrepresentable",  "receiver": "os",     "method": "unlink",    "unrepresentablePrimitive": "delete" },
+    { "id": "py.os.rmtree",         "kind": "unrepresentable",  "receiver": "os",     "method": "rmtree",   "unrepresentablePrimitive": "delete" },
+
+    { "id": "py.subprocess.run",          "kind": "subprocessExec", "receiver": "subprocess", "method": "run" },
+    { "id": "py.subprocess.call",         "kind": "subprocessExec", "receiver": "subprocess", "method": "call" },
+    { "id": "py.subprocess.check_call",   "kind": "subprocessExec", "receiver": "subprocess", "method": "check_call" },
+    { "id": "py.subprocess.check_output", "kind": "subprocessExec", "receiver": "subprocess", "method": "check_output" },
+    { "id": "py.subprocess.popen",        "kind": "subprocessExec", "receiver": "subprocess", "method": "Popen" },
+    { "id": "py.os.system",               "kind": "execShell",      "receiver": "os",         "method": "system" },
+
+    { "id": "py.requests.get",     "kind": "egress", "receiver": "requests",       "method": "get" },
+    { "id": "py.requests.post",    "kind": "egress", "receiver": "requests",       "method": "post" },
+    { "id": "py.requests.put",     "kind": "egress", "receiver": "requests",       "method": "put" },
+    { "id": "py.requests.patch",   "kind": "egress", "receiver": "requests",       "method": "patch" },
+    { "id": "py.requests.delete",  "kind": "egress", "receiver": "requests",       "method": "delete" },
+    { "id": "py.requests.head",    "kind": "egress", "receiver": "requests",       "method": "head" },
+    { "id": "py.urllib.request.urlopen", "kind": "egress", "receiver": "urllib.request", "method": "urlopen" },
+
+    { "id": "py.socket.create_connection",   "kind": "egressHostPort", "receiver": "socket", "method": "create_connection" },
+    { "id": "py.http.client.httpconnection",  "kind": "egressHostPort", "method": "HTTPConnection",  "defaultPort": 80 },
+    { "id": "py.http.client.httpsconnection", "kind": "egressHostPort", "method": "HTTPSConnection", "defaultPort": 443 },
+
+    { "id": "py.http.server.httpserver", "kind": "ingressHostPort", "method": "HTTPServer" },
+    { "id": "py.http.server.tcpserver",  "kind": "ingressHostPort", "method": "TCPServer" },
+    { "id": "py.http.server.udpserver",  "kind": "ingressHostPort", "method": "UDPServer", "protocol": "UDP" },
+    { "id": "py.socket.bind",            "kind": "ingressHostPort", "method": "bind" }
+  ]
+}

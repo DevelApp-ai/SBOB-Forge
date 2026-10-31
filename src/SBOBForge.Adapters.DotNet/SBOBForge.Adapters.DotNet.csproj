@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\SBOBForge.Parsing\SBOBForge.Parsing.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters\SBOBForge.Adapters.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

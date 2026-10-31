@@ -1,0 +1,17 @@
+{
+  "packageType": "maven",
+  "packageName": "com.example/example-core",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.java" ],
+  "testGlobs": [ "tests/**/*.java" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {
+    "git": "/usr/bin/git"
+  },
+  "allowParseError": []
+}

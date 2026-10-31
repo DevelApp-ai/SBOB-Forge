@@ -7,6 +7,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="catalog\dotnet-catalog.json" LogicalName="SBOBForge.Catalog.dotnet-catalog.json" />
+    <EmbeddedResource Include="catalog\java-catalog.json" LogicalName="SBOBForge.Catalog.java-catalog.json" />
+    <EmbeddedResource Include="catalog\python-catalog.json" LogicalName="SBOBForge.Catalog.python-catalog.json" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,15 @@
+{
+  "packageType": "pypi",
+  "packageName": "example-py-status",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.py" ],
+  "testGlobs": [ "tests/**/*.py" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {},
+  "allowParseError": []
+}

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -31,18 +32,35 @@ public sealed class GrammarLock
         return lockFile;
     }
 
-    public void Save(string path) =>
+    public void Save(string path)
+    {
+        CanonicalizeKeyOrder();
         File.WriteAllText(path, JsonSerializer.Serialize(this, Json.Options));
+    }
 
     /// <summary>Content-derived lock identity (annotation develapp.io/grammar-lock-sha256, TDS 8.2).</summary>
     public string ComputeLockHash()
     {
+        CanonicalizeKeyOrder();
         using var sha = System.Security.Cryptography.SHA256.Create();
         var canonical = JsonSerializer.SerializeToUtf8Bytes(this, new JsonSerializerOptions(Json.Options)
         {
             WriteIndented = false
         });
         return Convert.ToHexString(sha.ComputeHash(canonical)).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Grammar entries serialize in ordinal key order so identical pin sets are
+    /// byte-identical and hash-identical regardless of insertion order (TDS 5.3).
+    /// </summary>
+    private void CanonicalizeKeyOrder()
+    {
+        if (Grammars.Count < 2) return;
+        var sorted = new Dictionary<string, GrammarLockEntry>(StringComparer.Ordinal);
+        foreach (var kv in Grammars.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            sorted[kv.Key] = kv.Value;
+        Grammars = sorted;
     }
 
     /// <summary>Frozen-mode verification (TDS 5.3): the installed Minotaur version must equal the pinned one.</summary>
@@ -53,6 +71,27 @@ public sealed class GrammarLock
             throw new LockMismatchException(
                 $"Grammar lock mismatch: sbobforge.lock.json pins DevelApp.Minotaur {pinned}, " +
                 $"installed is {installedMinotaurVersion}. Run 'sbobforge lock --update' and review like a dependency bump.");
+    }
+
+    /// <summary>
+    /// Frozen-mode verification for a pinned grammar entry (TDS 5.3): the installed
+    /// backend/catalog version must equal the pinned one, and a pinned sha256 (catalogs)
+    /// must match the installed artifact hash.
+    /// </summary>
+    public void VerifyFrozenEntry(string entry, string installedVersion, string? installedSha256)
+    {
+        if (!Grammars.TryGetValue(entry, out var pinned))
+            throw new LockMismatchException(
+                $"Grammar lock mismatch: '{entry}' is not pinned in sbobforge.lock.json. " +
+                "Run 'sbobforge lock --update' and review like a dependency bump.");
+        if (!string.Equals(pinned.Version, installedVersion, StringComparison.Ordinal))
+            throw new LockMismatchException(
+                $"Grammar lock mismatch: sbobforge.lock.json pins {entry} {pinned.Version}, " +
+                $"installed is {installedVersion}. Run 'sbobforge lock --update' and review like a dependency bump.");
+        if (installedSha256 is not null && !string.Equals(pinned.Sha256, installedSha256, StringComparison.Ordinal))
+            throw new LockMismatchException(
+                $"Grammar lock mismatch: sbobforge.lock.json pins {entry} sha256 {pinned.Sha256}, " +
+                $"installed artifact hash is {installedSha256}. Run 'sbobforge lock --update' and review like a dependency bump.");
     }
 }
 
