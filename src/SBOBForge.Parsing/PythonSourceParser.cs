@@ -15,7 +15,7 @@ namespace SBOBForge.Parsing;
 public sealed class PythonSourceParser : ICodeModelParser
 {
     public const string BackendId = "sbobforge-python311";
-    public const string Version = "1.0.1";
+    public const string Version = "1.0.2";
 
     string ICodeModelParser.BackendId => BackendId;
 
@@ -216,14 +216,25 @@ public sealed class PythonSourceParser : ICodeModelParser
                 closed = 1;
                 break;
             }
-            if (c == '\\' && !raw && i + 1 < src.Length)
+            if (c == '\\' && i + 1 < src.Length)
             {
                 char e = src[i + 1];
-                sb.Append(e switch
+                if (raw)
                 {
-                    'n' => '\n', 't' => '\t', 'r' => '\r', '0' => '\0',
-                    '\\' => '\\', '"' => '"', '\'' => '\'', _ => e
-                });
+                    // Raw string: the backslash stays in the value, but it
+                    // still escapes the next character for tokenization —
+                    // r"\"" is valid and does not close the string.
+                    sb.Append(c).Append(e);
+                }
+                else
+                {
+                    sb.Append(e switch
+                    {
+                        'n' => '\n', 't' => '\t', 'r' => '\r', '0' => '\0',
+                        '\\' => '\\', '"' => '"', '\'' => '\'', _ => e
+                    });
+                }
+                if (e == '\n') line++;
                 i += 2;
                 continue;
             }
