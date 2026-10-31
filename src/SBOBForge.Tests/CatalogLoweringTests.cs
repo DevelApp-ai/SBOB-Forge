@@ -58,6 +58,28 @@ public class CatalogLoweringTests
     }
 
     [Fact]
+    public void AsyncFileFamilyLiftsLikeSyncCounterparts()
+    {
+        // Dogfood finding (DevelApp.Minotaur suite): the File.*Async family is
+        // common in real SUTs and must lower identically to the sync rules.
+        var read = DotNetCatalogLowering.Lower(Inv("File", "ReadAllTextAsync", CallArg.Literal("/etc/app/config.json")));
+        Assert.Equal(BehaviorPrimitive.Open, read!.Primitive);
+        Assert.Equal("/etc/app/config.json", read.Path);
+        Assert.Equal(new[] { "O_RDONLY" }, read.Flags);
+
+        var write = DotNetCatalogLowering.Lower(Inv("File", "WriteAllTextAsync",
+            CallArg.Literal("/tmp/sample.sscript"), CallArg.Literal("var x = 1;")));
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, write!.Flags);
+
+        var append = DotNetCatalogLowering.Lower(Inv("File", "AppendAllTextAsync",
+            CallArg.Literal("/var/log/app.log"), CallArg.Literal("entry")));
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, append!.Flags);
+
+        var lines = DotNetCatalogLowering.Lower(Inv("File", "ReadAllLinesAsync", CallArg.Literal("/etc/hosts")));
+        Assert.Equal(new[] { "O_RDONLY" }, lines!.Flags);
+    }
+
+    [Fact]
     public void FileDeleteIsUnrepresentableInSpecV004()
     {
         var lifted = DotNetCatalogLowering.Lower(Inv("File", "Delete", CallArg.Literal("/tmp/x")));
