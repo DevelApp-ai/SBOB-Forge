@@ -1,0 +1,77 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "45460b60aaafebbb6220eb19b51907c72ba3b630794a3f23a937d1554ef59693",
+  "FilesAnalyzed": 4,
+  "TestFiles": 1,
+  "TestEntries": 3,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is a non-constant expression, not a constant literal",
+      "File": "sut/com/example/core/ConfigStore.java",
+      "Line": 20,
+      "TestId": "sut:com.example.core.sut.ConfigStore.loadUser",
+      "Rule": "java.nio.files.readstring"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "harness API: .ConfigStore",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 17,
+      "TestId": "com.example.core.tests.ConfigStoreTests.loadsConfigFromEtc"
+    },
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 22,
+      "TestId": "com.example.core.tests.ConfigStoreTests.legacyPathStillUsed"
+    },
+    {
+      "Description": "test helper (not an entry method): Files.readString",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 24,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): Path.of",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 24,
+      "TestId": ""
+    },
+    {
+      "Description": "harness API: Path.of",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 31,
+      "TestId": "com.example.core.tests.ConfigStoreTests.writesLogPath[0]"
+    },
+    {
+      "Description": "harness API: .getBytes",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 31,
+      "TestId": "com.example.core.tests.ConfigStoreTests.writesLogPath[0]"
+    },
+    {
+      "Description": "harness API: Path.of",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 31,
+      "TestId": "com.example.core.tests.ConfigStoreTests.writesLogPath[1]"
+    },
+    {
+      "Description": "harness API: .getBytes",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 31,
+      "TestId": "com.example.core.tests.ConfigStoreTests.writesLogPath[1]"
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/com/example/core/ConfigStore.java",
+      "Line": 25,
+      "TestId": "sut:com.example.core.sut.ConfigStore.resetCache",
+      "Rule": ""
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "packageType": "maven",
+  "packageName": "com.example/example-ng",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.java" ],
+  "testGlobs": [ "tests/**/*.java" ],
+  "pathPolicies": [],
+  "execPathPolicy": {
+    "git": "/usr/bin/git"
+  },
+  "allowParseError": []
+}
