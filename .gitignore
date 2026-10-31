@@ -1,0 +1,17 @@
+# build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+.artifacts/
+
+# local tooling
+.dotnet/
+
+# test noise
+TestResults/
+*.trx
+coverage.json

@@ -1,0 +1,47 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "493d6e7d97c748d6e7dae6525ae49134db31cad8cae51a967b273ad79264abf9",
+  "FilesAnalyzed": 4,
+  "TestFiles": 1,
+  "TestEntries": 3,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an interpolated string, not a constant literal",
+      "File": "sut/ConfigStore.cs",
+      "Line": 11,
+      "TestId": "sut:Example.Core.Sut.ConfigStore.LoadUser",
+      "Rule": "dotnet.file.readalltext"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "harness API: Assert.NotNull",
+      "File": "tests/ConfigStoreTests.cs",
+      "Line": 12,
+      "TestId": "Example.Core.Tests.ConfigStoreTests.LoadsConfigFromEtc"
+    },
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/ConfigStoreTests.cs",
+      "Line": 15,
+      "TestId": "Example.Core.Tests.ConfigStoreTests.LegacyPathStillUsed"
+    },
+    {
+      "Description": "test helper (not an entry method): File.ReadAllText",
+      "File": "tests/ConfigStoreTests.cs",
+      "Line": 18,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/ConfigStore.cs",
+      "Line": 13,
+      "TestId": "sut:Example.Core.Sut.ConfigStore.Reset",
+      "Rule": ""
+    }
+  ]
+}

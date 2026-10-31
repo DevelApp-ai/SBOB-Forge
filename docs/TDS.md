@@ -184,6 +184,12 @@ Rules:
 - Language selection: `GetPluginByExtension`; embedded languages (JS-in-HTML, etc.) via Minotaur's embedded-grammar support.
 - Parse failures are **hard errors** (exit 2), never best-effort skips: a file that cannot be parsed could hide behavior, so the tool refuses to emit a silently incomplete SBOB. `--allow-parse-error <path>` exists for vendored fixtures, recorded in the coverage report.
 
+#### Implementation note (M1, 2026-10-31)
+
+A probe of the public `DevelApp.Minotaur` 1.5.0 package (nuget.org) showed that `StepParserIntegration.ParseToCognitiveGraphAsync` currently yields a flat token stream **without punctuation tokens** (no braces/parentheses) and truncates on non-trivial inputs, so syntax structure cannot be reconstructed for IR extraction at M1. `ValidateSourceAsync` works and is retained.
+
+**M1 decision:** the C# structural backend is Roslyn (`Microsoft.CodeAnalysis.CSharp` 4.11.0), pinned via the lock as `grammars["csharp"]`; `DevelApp.Minotaur` 1.5.0 stays the pinned source-validation substrate, and `generate --frozen` verifies both. The `ICodeModelParser`/`CodeModel` seam is backend-agnostic: when a public Minotaur release supports structure-preserving CognitiveGraph parsing, the Roslyn backend is swapped for a Minotaur-backed backend with no IR, catalog, adapter, or emitter changes. The lock additionally pins the .NET behavior catalog via `grammars["dotnet-catalog"].sha256`.
+
 ### 5.3 Grammar lock
 
 `sbobforge.lock.json`, committed in each product repo:

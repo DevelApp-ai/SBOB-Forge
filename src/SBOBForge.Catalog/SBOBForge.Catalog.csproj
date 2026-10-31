@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SBOBForge.Parsing\SBOBForge.Parsing.csproj" />
+    <ProjectReference Include="..\SBOBForge.Core\SBOBForge.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="catalog\dotnet-catalog.json" LogicalName="SBOBForge.Catalog.dotnet-catalog.json" />
+  </ItemGroup>
+
+</Project>

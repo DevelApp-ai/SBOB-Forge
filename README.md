@@ -9,4 +9,12 @@
 
 ## Status
 
-Pre-M1. Design accepted 2026-10-31; implementation proceeds per the milestone plan in TDS section 16 (org decision #27: milestone issues close when capabilities are implemented).
+**M1 core pipeline landed (2026-10-31):** grammar lock (`sbobforge.lock.json`, `--frozen`), deterministic ordinal discovery, Roslyn-backed C# parser with Minotaur 1.5.0 as the pinned source-validation substrate (see the implementation note in [TDS §5.2](docs/TDS.md)), xUnit/NUnit/MSTest adapters, .NET behavior catalog, behavior IR v1, canonical spec-v0.0.4 emitter with self-validation, `--check` drift gate, and a committed golden fixture (`examples/dotnet-xunit-fixture`) that regenerates byte-identically in CI. Dogfooding over DevelApp.Minotaur's real suite and remaining milestones continue per TDS §16 (issue #4 stays open until the dogfood target lands).
+
+### Try it
+
+```
+dotnet run --project src/SBOBForge.Cli -- version
+dotnet run --project src/SBOBForge.Cli -- scan examples/dotnet-xunit-fixture
+dotnet run --project src/SBOBForge.Cli -- generate examples/dotnet-xunit-fixture --check --frozen
+```
