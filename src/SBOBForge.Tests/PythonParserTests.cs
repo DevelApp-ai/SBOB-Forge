@@ -148,6 +148,31 @@ public class PythonParserTests
     }
 
     [Fact]
+    public void RawStringEscapedQuoteDoesNotTerminate()
+    {
+        // Found dogfooding storytime-audiobook-studio: in a raw string the
+        // backslash stays in the value, but still escapes the quote for
+        // tokenization — r"...[\"']..." must not close at the \".
+        var model = Parse("""
+            import re
+
+
+            def build():
+                quote = re.compile(r"[\"'](.+?)[\"']", re.S)
+                digits = re.compile(r"\d+")
+                return quote, digits
+            """);
+        var module = Assert.Single(model.Types);
+        var build = Assert.Single(module.Methods, m => m.Name == "build");
+        Assert.Equal(2, build.Invocations.Count);
+        Assert.All(build.Invocations, i => Assert.Equal("re", i.Receiver));
+        // raw value keeps backslashes verbatim, including the escaped quote
+        var first = build.Invocations[0].Args[0];
+        Assert.Equal(ArgKind.Literal, first.Kind);
+        Assert.Equal("[\\\"'](.+?)[\\\"']", first.Value);
+    }
+
+    [Fact]
     public void MixedTabSpaceIndentationIsAHardError()
     {
         Assert.Throws<ParseHardError>(() => Parse("def a():\n \tpass\n"));
