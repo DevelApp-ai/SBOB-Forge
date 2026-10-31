@@ -494,20 +494,20 @@ Exit codes: `0` ok · `2` parse/validation hard error · `3` drift detected (`--
 
 Milestones follow org decision #27 (milestone issues close when capabilities are implemented; polish/verification continues as ordinary issues).
 
-| Milestone | Scope | Dogfood target |
-|---|---|---|
-| M1 | Tool skeleton, lock, discovery, xUnit adapter, .NET catalog, IR, canonical emitter, golden tests | DevelApp.Minotaur (`sbob/develapp-minotaur.linux.sbob.yaml`) |
-| M2 | JUnit 5/TestNG + pytest adapters + catalogs | a DevelApp Java/Python artifact |
-| M3 | Go + JS/TS (Jest/Vitest) | — |
-| M4 | PHP + PowerShell/Bash lexical adapters | — |
-| M5 | C/C++ (GoogleTest, Catch2; `c17`/`cpp20` grammars); PowerShell/Bash authored grammars | — |
-| M6 | Cosign signing, nupkg/choco embedding, registry PR automation, `sbob-diff-gate` wiring, transpiler replay lane | full pipeline live |
-| M7 | Cross-language equivalence corpus, coverage report v1, `explain` | — |
+| Milestone | Scope | Dogfood target | Issue |
+|---|---|---|---|
+| M1 | Tool skeleton, lock, discovery, xUnit adapter, .NET catalog, IR, canonical emitter, golden tests | DevelApp.Minotaur (`sbob/develapp-minotaur.linux.sbob.yaml`) | [#4](https://github.com/DevelApp-ai/SBOB-Forge/issues/4) |
+| M2 | JUnit 5/TestNG + pytest adapters + catalogs | a DevelApp Java/Python artifact | [#7](https://github.com/DevelApp-ai/SBOB-Forge/issues/7) |
+| M3 | Go + JS/TS (Jest/Vitest) | — | [#5](https://github.com/DevelApp-ai/SBOB-Forge/issues/5) |
+| M4 | PHP + PowerShell/Bash lexical adapters | — | [#3](https://github.com/DevelApp-ai/SBOB-Forge/issues/3) |
+| M5 | C/C++ (GoogleTest, Catch2; `c17`/`cpp20` grammars); PowerShell/Bash authored grammars | — | [#8](https://github.com/DevelApp-ai/SBOB-Forge/issues/8) |
+| M6 | Cosign signing, nupkg/choco embedding, registry PR automation, `sbob-diff-gate` wiring, transpiler replay lane | full pipeline live | [#2](https://github.com/DevelApp-ai/SBOB-Forge/issues/2) |
+| M7 | Cross-language equivalence corpus, coverage report v1, `explain` | — | [#6](https://github.com/DevelApp-ai/SBOB-Forge/issues/6) |
 
 **Open issues**
 
 1. Upstream (bob project): contribute the package-purl binding / `package-profile` variant of the spec; propose `delete`-class primitives for a future spec version. The 2027 CNCF goal doesn't cover NuGet/Chocolatey distribution — this is a differentiable contribution.
-2. Software-Bill-of-Behavior: extend the validator's `imageID` pattern for `pkg:` purls; decide whether the drift ruleset binds to `metadata.name` (recommended) instead of parsing `imageID`.
+2. Software-Bill-of-Behavior: extend the validator's `imageID` pattern for `pkg:` purls; decide whether the drift ruleset binds to `metadata.name` (recommended) instead of parsing `imageID`. — **Filed as [Software-Bill-of-Behavior#33](https://github.com/DevelApp-ai/Software-Bill-of-Behavior/issues/33)** (2026-10-31).
 3. Minotaur-Grammars: `powershell`/`bash` grammar authoring (M5 dependency).
 4. SBOB-Forge internal: argv0-anchoring policy when exec args are parameterized (`args: [argv0, ⋯⋯]` vs full quarantine) — needs real-suite data from M1 before freezing.
 5. ~~Naming placeholder pending Lars's call~~ — **Resolved 2026-10-31:** `SBOB-Forge` confirmed (repo created); CLI binary remains `sbobforge`.
