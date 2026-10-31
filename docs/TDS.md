@@ -194,6 +194,8 @@ A probe of the public `DevelApp.Minotaur` 1.5.0 package (nuget.org) showed that 
 
 Minotaur has no public Java or Python grammars yet (the Minotaur-Grammars marketplace is C#-only at 1.5.0), so M2 ships **built-in deterministic backends** for Java 17 (`sbobforge-java17`) and Python 3.11 (`sbobforge-python311`) — self-contained tokenizer + parser passes inside SBOBForge.Parsing, no JDK/CPython toolchain dependency. Parse failures remain hard errors (exit 2); mixed tab/space indentation and bad dedents in Python are hard errors by design. Both backends are pinned via the lock (`grammars["java17"]`, `grammars["python311"]`) and `generate --frozen` verifies them together with the pinned catalog hashes (`java-catalog`, `python-catalog`). The same backend-agnostic `ICodeModelParser`/`CodeModel` seam applies: when Minotaur ships Java/Python grammars, the built-in backends are swapped with no IR, catalog, adapter, or emitter changes.
 
+**M2 dogfood decision — argv0-anchoring (resolves open issue 4):** dogfooding the generator against a real DevelApp Python suite (storytime-audiobook-studio) showed that full quarantine of partially-parameterized argv (`["git", "-C", str(d), "pull"]`) drops every exec in the profile — real apps routinely interpolate one dynamic path into an otherwise-literal argv. Freezing the policy as **argv0-anchoring**: when argv[0] is a constant literal and later elements are dynamic, the exec lifts as `args: [argv0, ⋯⋯]` (tier: the argv0 tier, program via `execPathPolicy`); when argv[0] itself is dynamic, the exec quarantines (a program that cannot be named cannot be policy-mapped). Fully-literal argv keeps exact `args` (no wildcard). Implemented for the Python and Java backends (`ArgKind.PartialList`); the same quarantines-as-before semantics apply elsewhere. Relatedly, when the emitter refuses to emit a section-shadowed profile (§8.4), the coverage report is now written anyway so there is something to inspect.
+
 ### 5.3 Grammar lock
 
 `sbobforge.lock.json`, committed in each product repo:
@@ -519,7 +521,7 @@ Milestones follow org decision #27 (milestone issues close when capabilities are
 1. Upstream (bob project): contribute the package-purl binding / `package-profile` variant of the spec; propose `delete`-class primitives for a future spec version. The 2027 CNCF goal doesn't cover NuGet/Chocolatey distribution — this is a differentiable contribution.
 2. Software-Bill-of-Behavior: extend the validator's `imageID` pattern for `pkg:` purls; decide whether the drift ruleset binds to `metadata.name` (recommended) instead of parsing `imageID`. — **Filed as [Software-Bill-of-Behavior#33](https://github.com/DevelApp-ai/Software-Bill-of-Behavior/issues/33)** (2026-10-31).
 3. Minotaur-Grammars: `powershell`/`bash` grammar authoring (M5 dependency).
-4. SBOB-Forge internal: argv0-anchoring policy when exec args are parameterized (`args: [argv0, ⋯⋯]` vs full quarantine) — needs real-suite data from M1 before freezing.
+4. ~~SBOB-Forge internal: argv0-anchoring policy when exec args are parameterized (`args: [argv0, ⋯⋯]` vs full quarantine) — needs real-suite data from M1 before freezing.~~ — **Resolved 2026-10-31 (M2 dogfood):** argv0-anchoring adopted; see the M2 implementation note (§5.2).
 5. ~~Naming placeholder pending Lars's call~~ — **Resolved 2026-10-31:** `SBOB-Forge` confirmed (repo created); CLI binary remains `sbobforge`.
 
 **Risks**
