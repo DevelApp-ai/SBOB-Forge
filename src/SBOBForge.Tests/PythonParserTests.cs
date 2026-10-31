@@ -120,6 +120,34 @@ public class PythonParserTests
     }
 
     [Fact]
+    public void BackslashLineContinuationsStayOneLogicalLine()
+    {
+        // Found dogfooding storytime-audiobook-studio: the continuation
+        // line's deeper indent must not create a phantom INDENT, and the
+        // dedent back to the suite level must not be an unindent error.
+        var model = Parse("""
+            import os
+
+
+            def cover_check(cover):
+                ok = cover is not None and \\
+                    str(cover).endswith(".jpg")
+                if ok and \\
+                        os.path.exists(str(cover)):
+                    os.remove(str(cover))
+                return ok
+            """);
+        var module = Assert.Single(model.Types);
+        var check = Assert.Single(module.Methods, m => m.Name == "cover_check");
+        // the whole construct parsed (no phantom INDENT / unindent error) and
+        // the calls on both continuation lines are attributed to the method
+        Assert.Contains(check.Invocations, i => i.Method == "endswith");
+        var remove = Assert.Single(check.Invocations, i => i.Method == "remove");
+        Assert.Equal("os", remove.Receiver);
+        Assert.True(check.Invocations.All(i => i.Line >= 4 && i.Line <= 10));
+    }
+
+    [Fact]
     public void MixedTabSpaceIndentationIsAHardError()
     {
         Assert.Throws<ParseHardError>(() => Parse("def a():\n \tpass\n"));
