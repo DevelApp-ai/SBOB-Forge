@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (warnings as errors)
+        run: dotnet build --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test --no-build --logger "trx"
+
+      # Org decision #26: generated artifacts are committed and drift-gated.
+      # The fixture SBOB must regenerate byte-identically from the pinned lock.
+      - name: Drift gate (fixture --check --frozen)
+        run: dotnet run --no-build --project src/SBOBForge.Cli -- generate examples/dotnet-xunit-fixture --check --frozen
