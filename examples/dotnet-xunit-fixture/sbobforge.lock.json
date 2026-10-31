@@ -8,6 +8,22 @@
     "dotnet-catalog": {
       "Version": "1",
       "Sha256": "9e252dccf873aa0a38a50d8d980b98ebdf7ddad43f5ed3176c8a4d97ba3bc2e2"
+    },
+    "java-catalog": {
+      "Version": "1",
+      "Sha256": "62df234830546dd2d37983a86a52f38e480f3b862875caade7cc3e3503d47a84"
+    },
+    "java17": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
+    "python-catalog": {
+      "Version": "1",
+      "Sha256": "0990de3b4ab706b7acc8d38046e76b658127124a42f54da76512e4f1bbcd78ab"
+    },
+    "python311": {
+      "Version": "1.0.0",
+      "Sha256": ""
     }
   },
   "Minotaur": {
