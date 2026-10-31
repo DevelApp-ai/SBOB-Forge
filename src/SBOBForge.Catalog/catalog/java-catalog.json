@@ -1,0 +1,26 @@
+{
+  "id": "java",
+  "version": 1,
+  "rules": [
+    { "id": "java.nio.files.readstring",        "kind": "open",           "receiver": "Files",     "method": "readString",         "flags": [ "O_RDONLY" ] },
+    { "id": "java.nio.files.readallbytes",      "kind": "open",           "receiver": "Files",     "method": "readAllBytes",       "flags": [ "O_RDONLY" ] },
+    { "id": "java.nio.files.readalllines",      "kind": "open",           "receiver": "Files",     "method": "readAllLines",       "flags": [ "O_RDONLY" ] },
+    { "id": "java.nio.files.newbufferedreader", "kind": "open",           "receiver": "Files",     "method": "newBufferedReader",  "flags": [ "O_RDONLY" ] },
+    { "id": "java.nio.files.write",             "kind": "open",           "receiver": "Files",     "method": "write",              "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "java.nio.files.createdirectories", "kind": "open",           "receiver": "Files",     "method": "createDirectories",  "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "java.nio.files.delete",            "kind": "unrepresentable", "receiver": "Files",   "method": "delete",             "unrepresentablePrimitive": "delete" },
+    { "id": "java.nio.files.deleteifexists",    "kind": "unrepresentable", "receiver": "Files",   "method": "deleteIfExists",      "unrepresentablePrimitive": "delete" },
+
+    { "id": "java.io.fileinputstream",   "kind": "open",           "method": "FileInputStream",  "flags": [ "O_RDONLY" ] },
+    { "id": "java.io.filereader",        "kind": "open",           "method": "FileReader",       "flags": [ "O_RDONLY" ] },
+    { "id": "java.io.fileoutputstream",  "kind": "openAppendable", "method": "FileOutputStream" },
+    { "id": "java.io.filewriter",        "kind": "openAppendable", "method": "FileWriter" },
+
+    { "id": "java.lang.processbuilder", "kind": "exec",       "method": "ProcessBuilder" },
+    { "id": "java.lang.runtime.exec",    "kind": "execTokens", "receiver": "getRuntime", "method": "exec" },
+
+    { "id": "java.net.url",          "kind": "egress",        "method": "URL" },
+    { "id": "java.net.socket",       "kind": "egressHostPort", "method": "Socket" },
+    { "id": "java.net.serversocket", "kind": "ingress",        "method": "ServerSocket" }
+  ]
+}
