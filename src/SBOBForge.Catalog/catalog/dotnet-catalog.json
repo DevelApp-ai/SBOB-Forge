@@ -1,0 +1,30 @@
+{
+  "id": "dotnet",
+  "version": 1,
+  "rules": [
+    { "id": "dotnet.file.readalltext",    "kind": "open",        "receiver": "File",      "method": "ReadAllText",    "flags": [ "O_RDONLY" ] },
+    { "id": "dotnet.file.readalllines",   "kind": "open",        "receiver": "File",      "method": "ReadAllLines",   "flags": [ "O_RDONLY" ] },
+    { "id": "dotnet.file.readallbytes",   "kind": "open",        "receiver": "File",      "method": "ReadAllBytes",   "flags": [ "O_RDONLY" ] },
+    { "id": "dotnet.file.openread",       "kind": "open",        "receiver": "File",      "method": "OpenRead",       "flags": [ "O_RDONLY" ] },
+    { "id": "dotnet.file.writealltext",   "kind": "open",        "receiver": "File",      "method": "WriteAllText",   "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "dotnet.file.writeallbytes",  "kind": "open",        "receiver": "File",      "method": "WriteAllBytes",  "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "dotnet.file.appendalltext",  "kind": "open",        "receiver": "File",      "method": "AppendAllText",  "flags": [ "O_WRONLY", "O_CREAT", "O_APPEND" ] },
+    { "id": "dotnet.file.open",           "kind": "openFileMode", "receiver": "File",      "method": "Open" },
+    { "id": "dotnet.file.delete",         "kind": "unrepresentable", "receiver": "File",  "method": "Delete", "unrepresentablePrimitive": "delete" },
+    { "id": "dotnet.directory.createdirectory", "kind": "open",  "receiver": "Directory", "method": "CreateDirectory", "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+
+    { "id": "dotnet.process.start",       "kind": "exec",        "receiver": "Process",   "method": "Start" },
+
+    { "id": "dotnet.http.getasync",       "kind": "egress", "method": "GetAsync" },
+    { "id": "dotnet.http.getstringasync", "kind": "egress", "method": "GetStringAsync" },
+    { "id": "dotnet.http.getstreamasync", "kind": "egress", "method": "GetStreamAsync" },
+    { "id": "dotnet.http.getbytearrayasync", "kind": "egress", "method": "GetByteArrayAsync" },
+    { "id": "dotnet.http.postasync",      "kind": "egress", "method": "PostAsync" },
+    { "id": "dotnet.http.putasync",       "kind": "egress", "method": "PutAsync" },
+    { "id": "dotnet.http.patchasync",     "kind": "egress", "method": "PatchAsync" },
+    { "id": "dotnet.http.deleteasync",    "kind": "egress", "method": "DeleteAsync" },
+    { "id": "dotnet.http.sendasync",      "kind": "egress", "method": "SendAsync" },
+
+    { "id": "dotnet.net.tcplistener",     "kind": "ingress", "method": "TcpListener" }
+  ]
+}

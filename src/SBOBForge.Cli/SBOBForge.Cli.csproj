@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SBOBForge.Core\SBOBForge.Core.csproj" />
+    <ProjectReference Include="..\SBOBForge.Parsing\SBOBForge.Parsing.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters.DotNet\SBOBForge.Adapters.DotNet.csproj" />
+    <ProjectReference Include="..\SBOBForge.Catalog\SBOBForge.Catalog.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
