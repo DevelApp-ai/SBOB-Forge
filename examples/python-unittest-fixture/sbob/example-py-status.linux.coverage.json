@@ -1,0 +1,32 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "513101f78003b5b8a36bb97011d2286d294b7958ef298552f22a1a585d97bbab",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 2,
+  "Quarantined": [],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/test_status_client.py",
+      "Line": 15,
+      "TestId": "tests/test_status_client.py::StatusClientTests::test_legacy_shell"
+    },
+    {
+      "Description": "test helper (not an entry method): status_client.shell_out",
+      "File": "tests/test_status_client.py",
+      "Line": 16,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/example_py_status/status_client.py",
+      "Line": 31,
+      "TestId": "sut:status_client.remove_temp",
+      "Rule": ""
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
+kind: ContainerProfile
+metadata:
+  name: example-py-status.linux
+  namespace: develapp
+  annotations:
+    kubescape.io/managed-by: User
+    develapp.io/binding: package-purl
+    develapp.io/generator: sbobforge@0.1.0
+    develapp.io/grammar-lock-sha256: a2738e7d5cfdf6404d48462c954331a8060b25af25fad30df488ac6816a27256
+    develapp.io/behavior-hash: 513101f78003b5b8a36bb97011d2286d294b7958ef298552f22a1a585d97bbab
+spec:
+  architectures: [amd64]
+  imageID: pkg:pypi/example-py-status@1.0.0
+  execs:
+    - path: /bin/sh
+      args: [/bin/sh, "-c", git status]
+  opens:
+    - path: "/app/⋯/cache"
+      flags: [O_DIRECTORY, O_CREAT]
+    - path: /var/log/status.log
+      flags: [O_WRONLY, O_CREAT, O_APPEND]
+  ingress:
+    - identifier: port-8080-ingress
+      type: external
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - identifier: api.example.com-egress
+      type: external
+      dnsNames: [api.example.com]
+      ports:
+        - { port: 443, protocol: TCP }
