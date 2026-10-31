@@ -53,8 +53,8 @@ public sealed record PackageIdentity(
     /// <summary>Normalized, lowercase purl, e.g. pkg:nuget/develapp.minotaur@1.32.0</summary>
     public string ImageId => $"pkg:{PurlType}/{Name.ToLowerInvariant()}@{Version}";
 
-    /// <summary>metadata.name: purl name with '.' replaced by '-'; target-os suffix keeps documents unique.</summary>
-    public string MetadataName => Name.ToLowerInvariant().Replace('.', '-') + "." + TargetOs.ToLowerInvariant();
+    /// <summary>metadata.name: purl name with '.' and '/' replaced by '-'; target-os suffix keeps documents unique.</summary>
+    public string MetadataName => Name.ToLowerInvariant().Replace('.', '-').Replace('/', '-') + "." + TargetOs.ToLowerInvariant();
 
     public static PackageIdentity FromPurl(string purl, string targetOs)
     {

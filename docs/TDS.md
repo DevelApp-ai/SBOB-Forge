@@ -190,6 +190,10 @@ A probe of the public `DevelApp.Minotaur` 1.5.0 package (nuget.org) showed that 
 
 **M1 decision:** the C# structural backend is Roslyn (`Microsoft.CodeAnalysis.CSharp` 4.11.0), pinned via the lock as `grammars["csharp"]`; `DevelApp.Minotaur` 1.5.0 stays the pinned source-validation substrate, and `generate --frozen` verifies both. The `ICodeModelParser`/`CodeModel` seam is backend-agnostic: when a public Minotaur release supports structure-preserving CognitiveGraph parsing, the Roslyn backend is swapped for a Minotaur-backed backend with no IR, catalog, adapter, or emitter changes. The lock additionally pins the .NET behavior catalog via `grammars["dotnet-catalog"].sha256`.
 
+#### Implementation note (M2, 2026-10-31)
+
+Minotaur has no public Java or Python grammars yet (the Minotaur-Grammars marketplace is C#-only at 1.5.0), so M2 ships **built-in deterministic backends** for Java 17 (`sbobforge-java17`) and Python 3.11 (`sbobforge-python311`) — self-contained tokenizer + parser passes inside SBOBForge.Parsing, no JDK/CPython toolchain dependency. Parse failures remain hard errors (exit 2); mixed tab/space indentation and bad dedents in Python are hard errors by design. Both backends are pinned via the lock (`grammars["java17"]`, `grammars["python311"]`) and `generate --frozen` verifies them together with the pinned catalog hashes (`java-catalog`, `python-catalog`). The same backend-agnostic `ICodeModelParser`/`CodeModel` seam applies: when Minotaur ships Java/Python grammars, the built-in backends are swapped with no IR, catalog, adapter, or emitter changes.
+
 ### 5.3 Grammar lock
 
 `sbobforge.lock.json`, committed in each product repo:

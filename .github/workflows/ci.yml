@@ -25,6 +25,9 @@ jobs:
         run: dotnet test --no-build --logger "trx"
 
       # Org decision #26: generated artifacts are committed and drift-gated.
-      # The fixture SBOB must regenerate byte-identically from the pinned lock.
-      - name: Drift gate (fixture --check --frozen)
-        run: dotnet run --no-build --project src/SBOBForge.Cli -- generate examples/dotnet-xunit-fixture --check --frozen
+      # Every fixture SBOB must regenerate byte-identically from the pinned lock.
+      - name: Drift gate (all fixtures --check --frozen)
+        run: |
+          for fixture in dotnet-xunit java-junit5 java-testng python-pytest python-unittest; do
+            dotnet run --no-build --project src/SBOBForge.Cli -- generate "examples/$fixture-fixture" --check --frozen
+          done
