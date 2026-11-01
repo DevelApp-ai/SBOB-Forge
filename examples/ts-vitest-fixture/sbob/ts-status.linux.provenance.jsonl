@@ -1,0 +1,7 @@
+{  "Primitive": "exec",  "Identifier": "/bin/sh",  "TestId": "sut:status-client.shellOut",  "File": "sut/ts/status-client.ts",  "Line": 17,  "Tier": "Literal",  "Rule": "js.cp.exec"}
+{  "Primitive": "open",  "Identifier": "/var/log/report.log",  "TestId": "tests/ts/status-client.test.ts::status client \u003E writes report",  "File": "tests/ts/status-client.test.ts",  "Line": 20,  "Tier": "Literal",  "Rule": "js.fs.appendfilesync"}
+{  "Primitive": "open",  "Identifier": "/var/log/ts-status.log",  "TestId": "sut:status-client.appendLog",  "File": "sut/ts/status-client.ts",  "Line": 11,  "Tier": "Literal",  "Rule": "js.fs.opensync"}
+{  "Primitive": "open",  "Identifier": "/var/log/ts-status.log",  "TestId": "tests/ts/status-client.test.ts::status client \u003E appends log",  "File": "sut/ts/status-client.ts",  "Line": 11,  "Tier": "Literal",  "Rule": "js.fs.opensync"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:status-client.fetchStatus",  "File": "sut/ts/status-client.ts",  "Line": 7,  "Tier": "Literal",  "Rule": "js.https.get"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "tests/ts/status-client.test.ts::status client \u003E fetches status",  "File": "sut/ts/status-client.ts",  "Line": 7,  "Tier": "Literal",  "Rule": "js.https.get"}
+{  "Primitive": "ingress",  "Identifier": ":8080",  "TestId": "sut:status-client.serveForever",  "File": "sut/ts/status-client.ts",  "Line": 22,  "Tier": "Literal",  "Rule": "js.net.listen"}

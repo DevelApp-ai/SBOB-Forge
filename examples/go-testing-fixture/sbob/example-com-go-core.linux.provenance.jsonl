@@ -1,0 +1,9 @@
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:core.RunGitStatus",  "File": "sut/go-core/configstore.go",  "Line": 33,  "Tier": "Pattern",  "Rule": "go.exec.command"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "tests/go-core/configstore_test.go::TestRunsGitStatus",  "File": "sut/go-core/configstore.go",  "Line": 33,  "Tier": "Pattern",  "Rule": "go.exec.command"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "sut:core.SaveCache",  "File": "sut/go-core/configstore.go",  "Line": 15,  "Tier": "Pattern",  "Rule": "go.os.writefile"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "sut:core.LoadConfig",  "File": "sut/go-core/configstore.go",  "Line": 11,  "Tier": "Literal",  "Rule": "go.os.readfile"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "tests/go-core/configstore_test.go::TestLoadsConfig",  "File": "sut/go-core/configstore.go",  "Line": 11,  "Tier": "Literal",  "Rule": "go.os.readfile"}
+{  "Primitive": "open",  "Identifier": "/var/log/go-app.log",  "TestId": "sut:core.AppendLog",  "File": "sut/go-core/configstore.go",  "Line": 23,  "Tier": "Literal",  "Rule": "go.os.openfile"}
+{  "Primitive": "open",  "Identifier": "/var/log/go-app.log",  "TestId": "tests/go-core/configstore_test.go::TestAppendsLog",  "File": "sut/go-core/configstore.go",  "Line": 23,  "Tier": "Literal",  "Rule": "go.os.openfile"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:core.FetchStatus",  "File": "sut/go-core/configstore.go",  "Line": 37,  "Tier": "Literal",  "Rule": "go.http.get"}
+{  "Primitive": "ingress",  "Identifier": ":8080",  "TestId": "sut:core.StartListener",  "File": "sut/go-core/configstore.go",  "Line": 46,  "Tier": "Literal",  "Rule": "go.net.listen"}

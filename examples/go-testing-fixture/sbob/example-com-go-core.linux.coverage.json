@@ -1,0 +1,47 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "e726a31fd4f1a28776e59e647e918734f55674567bb8aaab11fc44068e2de764",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 3,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is a non-constant expression, not a constant literal",
+      "File": "sut/go-core/configstore.go",
+      "Line": 19,
+      "TestId": "sut:core.LoadUser",
+      "Rule": "go.os.readfile"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/go-core/configstore_test.go",
+      "Line": 20,
+      "TestId": "tests/go-core/configstore_test.go::TestLegacyPath"
+    },
+    {
+      "Description": "test helper (not an entry method): t.Skip",
+      "File": "tests/go-core/configstore_test.go",
+      "Line": 21,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): os.ReadFile",
+      "File": "tests/go-core/configstore_test.go",
+      "Line": 22,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/go-core/configstore.go",
+      "Line": 54,
+      "TestId": "sut:core.CleanCache",
+      "Rule": ""
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "f6e2a4d724fb5e72c5afb0b8530c0b20994bd4e47eda2cd5935a1ddc99b81b26",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 4,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an interpolated string, not a constant literal",
+      "File": "sut/js/config-store.js",
+      "Line": 16,
+      "TestId": "sut:config-store.loadUser",
+      "Rule": "js.fs.readfilesync"
+    },
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an identifier, not a constant literal",
+      "File": "sut/js/config-store.js",
+      "Line": 20,
+      "TestId": "sut:config-store.writeLog",
+      "Rule": "js.fs.appendfilesync"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/js/config-store.test.js",
+      "Line": 12,
+      "TestId": "tests/js/config-store.test.js::config store \u003E legacy path"
+    },
+    {
+      "Description": "test helper (not an entry method): .loadUser",
+      "File": "tests/js/config-store.test.js",
+      "Line": 13,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/js/config-store.js",
+      "Line": 37,
+      "TestId": "sut:config-store.clearCache",
+      "Rule": ""
+    }
+  ]
+}

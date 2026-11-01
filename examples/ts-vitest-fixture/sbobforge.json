@@ -1,0 +1,17 @@
+{
+  "packageType": "npm",
+  "packageName": "ts-status",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.ts" ],
+  "testGlobs": [ "tests/**/*.ts" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {
+    "git": "/usr/bin/git"
+  },
+  "allowParseError": []
+}
