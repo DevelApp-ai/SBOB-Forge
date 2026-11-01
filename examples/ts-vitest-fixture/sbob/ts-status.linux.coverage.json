@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "3816c66389892432d124d92f8149864ac33ceac6ccf09b76fd845003cd4534bd",
+  "BehaviorHash": "c90cc153d878338b12c7b379f631d37f253b9ee96d5047aedd595ed2cba3c85a",
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 3,
@@ -28,5 +28,6 @@
       "TestId": "sut:status-client.clearStatus",
       "Rule": ""
     }
-  ]
+  ],
+  "LexicalParsers": []
 }

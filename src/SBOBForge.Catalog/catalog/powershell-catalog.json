@@ -1,0 +1,21 @@
+{
+  "id": "powershell",
+  "version": 1,
+  "rules": [
+    { "id": "ps.get-content",        "kind": "open",               "method": "Get-Content",  "flags": [ "O_RDONLY" ] },
+    { "id": "ps.set-content",        "kind": "open",               "method": "Set-Content",  "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "ps.add-content",        "kind": "open",               "method": "Add-Content",  "flags": [ "O_WRONLY", "O_CREAT", "O_APPEND" ] },
+    { "id": "ps.remove-item",        "kind": "unrepresentable",    "method": "Remove-Item",  "unrepresentablePrimitive": "delete" },
+
+    { "id": "ps.start-process",      "kind": "psStartProcess",    "method": "Start-Process" },
+    { "id": "ps.call-op",            "kind": "psCallOperator",    "method": "&" },
+    { "id": "ps.invoke-expression",  "kind": "psInvokeExpression", "method": "Invoke-Expression" },
+
+    { "id": "ps.invoke-webrequest",  "kind": "psEgressUri",       "method": "Invoke-WebRequest" },
+    { "id": "ps.invoke-restmethod",  "kind": "psEgressUri",       "method": "Invoke-RestMethod" },
+    { "id": "ps.tcpclient",          "kind": "egressHostPort",    "method": "TcpClient" },
+
+    { "id": "ps.redir-truncate",     "kind": "open",              "method": ">",  "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "ps.redir-append",       "kind": "open",              "method": ">>", "flags": [ "O_WRONLY", "O_CREAT", "O_APPEND" ] }
+  ]
+}

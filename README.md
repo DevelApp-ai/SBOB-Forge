@@ -9,6 +9,8 @@
 
 ## Status
 
+**M4 PHP + PowerShell/Bash landed (2026-11-01):** structural `php` parser backend (namespaces, classes, docblock `@test`/`@requires` and `#[Test]` entry cues, `markTestSkipped` disable), PHPUnit adapter, `php-catalog` lowering (fopen mode table, dual-purpose `file_get_contents` open/URL kind, literal-first-token `exec` family, `curl_init` egress), plus the TDS §5.4 Phase A lexical adapters: `powershell` and `bash` fixed token scanners with Pester v5 / Bats adapters and `powershell-catalog` / `bash-catalog` (command words, `-Param` named args, `&` call operator, `Start-Process`, `Invoke-WebRequest`/`curl`, `nc`/`ssh`, redirection opens, `Invoke-Expression` RCE-shaped quarantine). Lexical backends are marked `parser: lexical` in the coverage report and SBOB annotations (reduced confidence tier), and three committed golden fixtures (`examples/php-phpunit-fixture`, `examples/powershell-pester-fixture`, `examples/bash-bats-fixture`) drift-gate in CI next to the earlier ones. See the implementation note in [TDS §5.4](docs/TDS.md).
+
 **M3 Go + JS/TS landed (2026-11-01):** built-in deterministic `go119` and `typescript` parser backends (one backend covers `.js/.mjs/.cjs/.ts/.tsx/.jsx`), go test / Jest / Vitest adapters, Go and JS behavior catalogs (pinned in the lock as `go-catalog` / `js-catalog`), per-language lowering (Go `os.OpenFile` flag masks → canonical spec flags, `net.Dial`/`net.Listen` literal addr forms; JS `child_process` shell vs argv forms with argv0-anchoring, `fs` open mode strings, bare-receiver `fetch`/`execFile` vs `RegExp.exec` exclusion, any-receiver `listen`), Jest `.each` case propagation with callback-parameter substitution, `xdescribe`/`describe.skip` describe-level skip resolution, and three committed golden fixtures (`examples/go-testing-fixture`, `examples/js-jest-fixture`, `examples/ts-vitest-fixture`) drift-gated in CI next to the M1/M2 fixtures. See the implementation note in [TDS §5.2](docs/TDS.md).
 
 **M2 Java + Python landed (2026-10-31):** built-in deterministic `java17` and `python311` parser backends (no external language toolchains), JUnit 5 / TestNG and pytest / unittest adapters, Java and Python behavior catalogs (pinned in the lock alongside the .NET catalog), per-language lowering (Java `FileOutputStream` append flags, `Runtime.exec` token split; Python `open()` mode strings, `subprocess` argv / `shell=True` → `/bin/sh -c`, `os.system`, URL / host-port / address-tuple network rules), parametrize / `@ValueSource` case propagation, and four committed golden fixtures (`examples/java-junit5-fixture`, `examples/java-testng-fixture`, `examples/python-pytest-fixture`, `examples/python-unittest-fixture`) drift-gated in CI next to the M1 .NET fixture.
@@ -20,7 +22,7 @@
 ```
 dotnet run --project src/SBOBForge.Cli -- version
 dotnet run --project src/SBOBForge.Cli -- scan examples/python-pytest-fixture
-for f in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-testing js-jest ts-vitest; do
+for f in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-testing js-jest ts-vitest php-phpunit powershell-pester bash-bats; do
   dotnet run --project src/SBOBForge.Cli -- generate "examples/$f-fixture" --check --frozen
 done
 ```

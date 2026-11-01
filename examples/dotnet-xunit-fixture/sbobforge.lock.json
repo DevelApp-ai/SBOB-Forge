@@ -1,6 +1,14 @@
 {
   "sbobIrVersion": 1,
   "Grammars": {
+    "bash": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
+    "bash-catalog": {
+      "Version": "1",
+      "Sha256": "744373e45e074e620e074127973d8aa0cce97ab638ebd5b54a9fd76ae20a7667"
+    },
     "csharp": {
       "Version": "4.11.0",
       "Sha256": ""
@@ -28,6 +36,22 @@
     "js-catalog": {
       "Version": "1",
       "Sha256": "57cdb1dc16fa124af167f3c522eb98d06ad736a25b55fda3f6cce15517360876"
+    },
+    "php": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
+    "php-catalog": {
+      "Version": "1",
+      "Sha256": "c0ef0ac800afad5065b4a7505c728f90a2b588ae4316c0ec08b03c8bcc83aa31"
+    },
+    "powershell": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
+    "powershell-catalog": {
+      "Version": "1",
+      "Sha256": "0771ab1b38328ecc63b17077074cc4b85421598265788da0998cdc7d83f8d953"
     },
     "python-catalog": {
       "Version": "1",

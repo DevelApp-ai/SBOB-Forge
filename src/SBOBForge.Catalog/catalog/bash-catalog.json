@@ -1,0 +1,16 @@
+{
+  "id": "bash",
+  "version": 1,
+  "rules": [
+    { "id": "sh.git",            "kind": "shCommand",       "method": "git" },
+    { "id": "sh.curl",           "kind": "shCurl",          "method": "curl" },
+    { "id": "sh.wget",           "kind": "shCurl",          "method": "wget" },
+    { "id": "sh.nc",             "kind": "shNc",            "method": "nc" },
+    { "id": "sh.ssh",            "kind": "shSsh",           "method": "ssh", "defaultPort": 22 },
+    { "id": "sh.rm",             "kind": "unrepresentable", "method": "rm",      "unrepresentablePrimitive": "delete" },
+    { "id": "sh.rmdir",          "kind": "unrepresentable", "method": "rmdir",   "unrepresentablePrimitive": "delete" },
+
+    { "id": "sh.redir-truncate", "kind": "open",            "method": ">",  "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "sh.redir-append",   "kind": "open",            "method": ">>", "flags": [ "O_WRONLY", "O_CREAT", "O_APPEND" ] }
+  ]
+}

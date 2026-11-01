@@ -5,10 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using SBOBForge.Adapters;
+using SBOBForge.Adapters.Bash;
 using SBOBForge.Adapters.DotNet;
 using SBOBForge.Adapters.Go;
 using SBOBForge.Adapters.Java;
+using SBOBForge.Adapters.Php;
 using SBOBForge.Adapters.Python;
+using SBOBForge.Adapters.PowerShell;
 using SBOBForge.Adapters.TypeScript;
 using SBOBForge.Catalog;
 using SBOBForge.Core;
@@ -51,10 +54,15 @@ public sealed class GenerationResult
 /// .py → python311 parser).
 /// M3: .go → go119 parser, .js/.ts → typescript parser (Jest/Vitest adapters,
 /// js catalog).
+/// M4: .php → structural php parser (PHPUnit adapter, php catalog);
+/// .ps1/.psm1/.psd1 → powershell lexical parser (Pester adapter,
+/// powershell catalog); .sh/.bash/.bats → bash lexical parser (Bats adapter,
+/// bash catalog). Lexical backends mark every downstream artifact
+/// `parser: lexical` (TDS 5.4 Phase A) — reduced confidence tier.
 /// </summary>
 public static class GeneratePipeline
 {
-    internal enum SourceLang { CSharp, Java, Python, Go, TypeScript }
+    internal enum SourceLang { CSharp, Java, Python, Go, TypeScript, Php, PowerShell, Bash }
 
     public static GenerationResult Run(GenerationOptions options)
     {
@@ -76,6 +84,9 @@ public static class GeneratePipeline
             grammarLock.VerifyFrozenEntry("python311", PythonSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("go119", GoSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("typescript", TypeScriptSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("php", PhpSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("powershell", PowerShellSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("bash", BashSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry(DotNetCatalog.LockEntryName,
                 DotNetCatalogLowering.Catalog.Version.ToString(), DotNetCatalog.ComputeDefaultHash());
             grammarLock.VerifyFrozenEntry(JavaCatalog.LockEntryName,
@@ -86,12 +97,19 @@ public static class GeneratePipeline
                 GoCatalogLowering.Catalog.Version.ToString(), GoCatalog.ComputeDefaultHash());
             grammarLock.VerifyFrozenEntry(JsCatalog.LockEntryName,
                 JsCatalogLowering.Catalog.Version.ToString(), JsCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(PhpCatalog.LockEntryName,
+                PhpCatalogLowering.Catalog.Version.ToString(), PhpCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(PowerShellCatalog.LockEntryName,
+                PowerShellCatalogLowering.Catalog.Version.ToString(), PowerShellCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(BashCatalog.LockEntryName,
+                BashCatalogLowering.Catalog.Version.ToString(), BashCatalog.ComputeDefaultHash());
         }
 
         var sutFiles = FileDiscovery.Enumerate(root, config.SutGlobs);
         var testFiles = FileDiscovery.Enumerate(root, config.TestGlobs);
 
         var allowedParseError = new HashSet<string>(config.AllowParseError, StringComparer.Ordinal);
+        var analyzedLangs = new SortedSet<string>(StringComparer.Ordinal);
 
         var sutModels = new List<(CodeModel Model, SourceLang Lang)>();
         var testModels = new List<(CodeModel Model, IReadOnlyList<TestEntry> Entries, List<TestEntry> Skipped)>();
@@ -100,12 +118,14 @@ public static class GeneratePipeline
         foreach (var file in sutFiles)
         {
             var lang = LangOf(file);
+            analyzedLangs.Add(LangKey(lang));
             sutModels.Add((ParseOrQuarantine(ParserFor(lang), root, file, allowedParseError, parseErrors), lang));
         }
 
         foreach (var file in testFiles)
         {
             var lang = LangOf(file);
+            analyzedLangs.Add(LangKey(lang));
             var model = ParseOrQuarantine(ParserFor(lang), root, file, allowedParseError, parseErrors);
             var entries = RegistryFor(lang)(model);
             testModels.Add((model, entries.Where(e => e.Enabled).ToList(), entries.Where(e => !e.Enabled).ToList()));
@@ -277,7 +297,8 @@ public static class GeneratePipeline
             noise.OrderBy(n => n.File, StringComparer.Ordinal).ThenBy(n => n.Line).ThenBy(n => n.TestId, StringComparer.Ordinal).ToArray(),
             unrepresentable.OrderBy(u => u.File, StringComparer.Ordinal).ThenBy(u => u.Line).ThenBy(u => u.TestId, StringComparer.Ordinal).ToArray(),
             sutFiles.Count + testFiles.Count, testFiles.Count,
-            testModels.Sum(t => t.Entries.Count));
+            testModels.Sum(t => t.Entries.Count),
+            analyzedLangs.Where(l => l is "powershell" or "bash").ToArray());
 
         var ir = new BehaviorIr(
             package, execs, opens, egress, ingress, coverage,
@@ -331,8 +352,31 @@ public static class GeneratePipeline
             || file.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
             || file.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase)
             || file.EndsWith(".jsx", StringComparison.OrdinalIgnoreCase)) return SourceLang.TypeScript;
+        if (file.EndsWith(".php", StringComparison.OrdinalIgnoreCase)) return SourceLang.Php;
+        if (file.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".psm1", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".psd1", StringComparison.OrdinalIgnoreCase)) return SourceLang.PowerShell;
+        if (file.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".bash", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".bats", StringComparison.OrdinalIgnoreCase)) return SourceLang.Bash;
         return SourceLang.CSharp;
     }
+
+    internal static string LangKey(SourceLang lang) => lang switch
+    {
+        SourceLang.CSharp => "csharp",
+        SourceLang.Java => "java",
+        SourceLang.Python => "python",
+        SourceLang.Go => "go",
+        SourceLang.TypeScript => "typescript",
+        SourceLang.Php => "php",
+        SourceLang.PowerShell => "powershell",
+        SourceLang.Bash => "bash",
+        _ => ""
+    };
+
+    /// <summary>TDS 5.4 Phase A: PowerShell and Bash files are analyzed by fixed lexical scanners — reduced confidence, marked `parser: lexical` downstream.</summary>
+    internal static bool IsLexicalLang(SourceLang lang) => lang is SourceLang.PowerShell or SourceLang.Bash;
 
     internal static ICodeModelParser ParserFor(SourceLang lang) => lang switch
     {
@@ -340,6 +384,9 @@ public static class GeneratePipeline
         SourceLang.Python => new PythonSourceParser(),
         SourceLang.Go => new GoSourceParser(),
         SourceLang.TypeScript => new TypeScriptSourceParser(),
+        SourceLang.Php => new PhpSourceParser(),
+        SourceLang.PowerShell => new PowerShellSourceParser(),
+        SourceLang.Bash => new BashSourceParser(),
         _ => new RoslynCSharpParser()
     };
 
@@ -349,6 +396,9 @@ public static class GeneratePipeline
         SourceLang.Python => new PythonTestFrameworkRegistry().ExtractEntries,
         SourceLang.Go => new GoTestFrameworkRegistry().ExtractEntries,
         SourceLang.TypeScript => new JsTestFrameworkRegistry().ExtractEntries,
+        SourceLang.Php => new PhpTestFrameworkRegistry().ExtractEntries,
+        SourceLang.PowerShell => new PsTestFrameworkRegistry().ExtractEntries,
+        SourceLang.Bash => new ShTestFrameworkRegistry().ExtractEntries,
         _ => new TestFrameworkRegistry().ExtractEntries
     };
 
@@ -358,6 +408,9 @@ public static class GeneratePipeline
         SourceLang.Python => PythonCatalogLowering.Lower(inv, substitute),
         SourceLang.Go => GoCatalogLowering.Lower(inv, substitute),
         SourceLang.TypeScript => JsCatalogLowering.Lower(inv, substitute),
+        SourceLang.Php => PhpCatalogLowering.Lower(inv, substitute),
+        SourceLang.PowerShell => PowerShellCatalogLowering.Lower(inv, substitute),
+        SourceLang.Bash => BashCatalogLowering.Lower(inv, substitute),
         _ => DotNetCatalogLowering.Lower(inv, substitute)
     };
 
@@ -428,7 +481,8 @@ public static class GeneratePipeline
             q.Primitive.ToString(), q.Reason, q.File, q.Line, q.TestId, q.CatalogRuleId)).ToArray(),
         ir.Coverage.Noise.Select(n => new NoiseRow(n.Description, n.File, n.Line, n.TestId)).ToArray(),
         ir.Coverage.Unrepresentable.Select(u => new CoverageRow(
-            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options) + "\n";
+            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray(),
+        ir.Coverage.LexicalParserList.ToArray()), Json.Options) + "\n";
 
     public static string RoslynVersion() =>
         typeof(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -449,5 +503,6 @@ public static class GeneratePipeline
         int TestEntries,
         CoverageRow[] Quarantined,
         NoiseRow[] Noise,
-        CoverageRow[] Unrepresentable);
+        CoverageRow[] Unrepresentable,
+        string[] LexicalParsers);
 }

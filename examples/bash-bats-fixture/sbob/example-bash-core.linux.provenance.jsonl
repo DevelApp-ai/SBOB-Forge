@@ -1,0 +1,8 @@
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:status.run_git_status",  "File": "sut/bash/status.sh",  "Line": 4,  "Tier": "Pattern",  "Rule": "sh.git"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "tests/bash/status.bats::runs git status",  "File": "sut/bash/status.sh",  "Line": 4,  "Tier": "Pattern",  "Rule": "sh.git"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "sut:status.save_cache",  "File": "sut/bash/status.sh",  "Line": 16,  "Tier": "Pattern",  "Rule": "sh.redir-truncate"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "tests/bash/status.bats::saves cache",  "File": "sut/bash/status.sh",  "Line": 16,  "Tier": "Pattern",  "Rule": "sh.redir-truncate"}
+{  "Primitive": "open",  "Identifier": "/var/log/bash-app.log",  "TestId": "sut:status.append_log",  "File": "sut/bash/status.sh",  "Line": 12,  "Tier": "Literal",  "Rule": "sh.redir-append"}
+{  "Primitive": "open",  "Identifier": "/var/log/bash-app.log",  "TestId": "tests/bash/status.bats::appends log",  "File": "sut/bash/status.sh",  "Line": 12,  "Tier": "Literal",  "Rule": "sh.redir-append"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:status.fetch_status",  "File": "sut/bash/status.sh",  "Line": 8,  "Tier": "Literal",  "Rule": "sh.curl"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "tests/bash/status.bats::fetches status",  "File": "sut/bash/status.sh",  "Line": 8,  "Tier": "Literal",  "Rule": "sh.curl"}

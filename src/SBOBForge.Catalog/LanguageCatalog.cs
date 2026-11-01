@@ -87,3 +87,27 @@ public static class JsCatalog
     public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
     public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
 }
+
+public static class PhpCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.php-catalog.json";
+    public const string LockEntryName = "php-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}
+
+public static class PowerShellCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.powershell-catalog.json";
+    public const string LockEntryName = "powershell-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}
+
+public static class BashCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.bash-catalog.json";
+    public const string LockEntryName = "bash-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}

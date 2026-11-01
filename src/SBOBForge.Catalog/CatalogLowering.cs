@@ -45,7 +45,9 @@ public sealed record LoweredInvocation(
 /// never best-effort guessing — for anything not statically resolvable.
 /// Kinds: open, openFileMode, openModeString, openAppendable, unrepresentable,
 /// exec, execTokens, execShell, subprocessExec, egress, egressHostPort,
-/// ingress, ingressHostPort.
+/// ingress, ingressHostPort, egressNetDial, ingressNetListen, openGoFlags,
+/// execProgramArgs, phpFileGetContents, psStartProcess, psCallOperator,
+/// psInvokeExpression, psEgressUri, shCommand, shCurl, shNc, shSsh.
 /// </summary>
 public static class CatalogLowering
 {
@@ -101,6 +103,15 @@ public static class CatalogLowering
             "ingressNetListen" => LowerIngressNetListen(rule, invocation, substitute),
             "openGoFlags" => LowerOpenGoFlags(rule, invocation, substitute),
             "execProgramArgs" => LowerExecProgramArgs(rule, invocation, substitute),
+            "phpFileGetContents" => LowerPhpFileGetContents(rule, invocation, substitute),
+            "psStartProcess" => LowerPsStartProcess(rule, invocation, substitute),
+            "psCallOperator" => LowerPsCallOperator(rule, invocation, substitute),
+            "psInvokeExpression" => LowerPsInvokeExpression(rule, invocation, substitute),
+            "psEgressUri" => LowerPsEgressUri(rule, invocation, substitute),
+            "shCommand" => LowerShCommand(rule, invocation, substitute),
+            "shCurl" => LowerShCurl(rule, invocation, substitute),
+            "shNc" => LowerShNc(rule, invocation, substitute),
+            "shSsh" => LowerShSsh(rule, invocation, substitute),
             _ => throw new InvalidOperationException($"Unknown catalog rule kind '{rule.Kind}' ({rule.Id})")
         };
     }
@@ -379,17 +390,9 @@ public static class CatalogLowering
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
                 $"request URL is {KindName(resolved)}, not a constant literal");
 
-        if (!Uri.TryCreate(resolved.Value, UriKind.Absolute, out var uri)
-            || (uri.Scheme != "http" && uri.Scheme != "https"))
-            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+        return EgressFromUrl(rule, resolved.Value)
+            ?? Quarantined(rule, BehaviorPrimitive.Connect, inv,
                 $"request URL '{resolved.Value}' is not an absolute http(s) URL");
-
-        var defaultPort = uri.Scheme == "https" ? 443 : 80;
-        var port = uri.IsDefaultPort ? defaultPort : uri.Port;
-        return new LoweredInvocation(
-            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
-            null, Array.Empty<string>(), Array.Empty<string>(), true,
-            uri.Host.ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
     }
 
     /// <summary>Socket(host, port) / socket.create_connection((host, port)) / HTTPConnection(host[, port]).</summary>
@@ -591,6 +594,243 @@ public static class CatalogLowering
             null, null, "", NetDirection.Egress, null, null);
     }
 
+    // ---- M4 kinds (PHP / PowerShell / Bash; TDS 5.4 Phase A, 7.2) ----------
+
+    /// <summary>Absolute http(s) URL literal → egress Connect event; null when the value is not an absolute http(s) URL.</summary>
+    private static LoweredInvocation? EgressFromUrl(CatalogRule rule, string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != "http" && uri.Scheme != "https"))
+            return null;
+        var defaultPort = uri.Scheme == "https" ? 443 : 80;
+        var port = uri.IsDefaultPort ? defaultPort : uri.Port;
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            uri.Host.ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
+    }
+
+    /// <summary>
+    /// file_get_contents(path): dual-kind (TDS 7.2 PHP row) — an absolute
+    /// http(s) URL literal is a streams egress; anything else constant is an
+    /// O_RDONLY open. Non-constant paths quarantine (URL-vs-path is unknowable).
+    /// </summary>
+    private static LoweredInvocation LowerPhpFileGetContents(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var path = Arg(inv, 0);
+        if (path is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "path/URL argument missing");
+        var resolved = Resolve(path, substitute);
+        if (!resolved.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"path/URL is {KindName(resolved)}, not a constant literal");
+        var egress = EgressFromUrl(rule, resolved.Value);
+        if (egress is not null) return egress;
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
+            resolved.Value, new[] { "O_RDONLY" }, Array.Empty<string>(), true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>Start-Process -FilePath "prog" [-ArgumentList …]: argv0 from the named parameter; bare name maps through execPathPolicy downstream.</summary>
+    private static LoweredInvocation LowerPsStartProcess(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var fileArg = inv.Args.FirstOrDefault(a => a.IsNamed("FilePath"));
+        if (fileArg is null)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "Start-Process -FilePath argument missing");
+        var resolvedFile = Resolve(fileArg, substitute);
+        if (!resolvedFile.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv,
+                $"exec program is {KindName(resolvedFile)}, not a constant literal");
+
+        var argsArg = inv.Args.FirstOrDefault(a => a.IsNamed("ArgumentList"));
+        if (argsArg is null)
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedFile.Value, Array.Empty<string>(), Array.Empty<string>(), true,
+                null, null, "", NetDirection.Egress, null, null);
+        var resolvedArgs = Resolve(argsArg, substitute);
+        if (resolvedArgs.Kind == ArgKind.List)
+        {
+            var argv = resolvedArgs.ListElements().ToArray();
+            if (argv.Length == 0)
+                return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec argv list is empty");
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedFile.Value, Array.Empty<string>(), argv, true,
+                null, null, "", NetDirection.Egress, null, null);
+        }
+        if (resolvedArgs.IsLiteral)
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedFile.Value, Array.Empty<string>(), new[] { resolvedArgs.Value }, true,
+                null, null, "", NetDirection.Egress, null, null);
+        // dynamic args: argv0-anchoring (TDS 5.2) — program knowable, args are not
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+            resolvedFile.Value, Array.Empty<string>(), Array.Empty<string>(), false,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>
+    /// `&amp; "program" arg1 arg2 …` call operator: arg0 is the program, the
+    /// remaining args are the exact argv when all are constant literals;
+    /// any dynamic argument argv0-anchors (TDS 5.2).
+    /// </summary>
+    private static LoweredInvocation LowerPsCallOperator(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var program = Arg(inv, 0);
+        if (program is null)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec program argument missing");
+        var resolvedProgram = Resolve(program, substitute);
+        if (!resolvedProgram.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv,
+                $"exec program is {KindName(resolvedProgram)}, not a constant literal");
+        var rest = inv.Args.Skip(1).Select(a => Resolve(a, substitute)).ToList();
+        if (rest.Count == 0)
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedProgram.Value, Array.Empty<string>(), Array.Empty<string>(), true,
+                null, null, "", NetDirection.Egress, null, null);
+        if (rest.All(a => a.IsLiteral))
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedProgram.Value, Array.Empty<string>(), rest.Select(a => a.Value).ToArray(), true,
+                null, null, "", NetDirection.Egress, null, null);
+        // dynamic args: argv0-anchoring (TDS 5.2) — program name knowable, args are not
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+            resolvedProgram.Value, Array.Empty<string>(), Array.Empty<string>(), false,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>
+    /// Invoke-Expression "cmd": a constant string lowers by its literal first
+    /// token (TDS 7.2); a non-constant argument is RCE-shaped and always
+    /// quarantines for review — never best-effort.
+    /// </summary>
+    private static LoweredInvocation LowerPsInvokeExpression(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var cmd = Arg(inv, 0);
+        if (cmd is null)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "Invoke-Expression command argument missing");
+        var resolved = Resolve(cmd, substitute);
+        if (!resolved.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv,
+                $"Invoke-Expression argument is {KindName(resolved)}, not a constant string (RCE-shaped; must be reviewed)");
+        var argv = resolved.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (argv.Length == 0)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "Invoke-Expression command is empty");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+            argv[0], Array.Empty<string>(), argv[1..], true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>Invoke-WebRequest / Invoke-RestMethod -Uri "https://…": named -Uri parameter (or the first positional arg).</summary>
+    private static LoweredInvocation LowerPsEgressUri(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var uriArg = inv.Args.FirstOrDefault(a => a.IsNamed("Uri") || a.IsNamed("Url")) ?? Arg(inv, 0);
+        if (uriArg is null)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv, "request URL argument missing");
+        var resolved = Resolve(uriArg, substitute);
+        if (!resolved.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                $"request URL is {KindName(resolved)}, not a constant literal");
+        return EgressFromUrl(rule, resolved.Value)
+            ?? Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                $"request URL '{resolved.Value}' is not an absolute http(s) URL");
+    }
+
+    /// <summary>
+    /// A bare command word (`git status`): the command word itself is the
+    /// program (rule-matched); literal args follow. Any dynamic arg drops to
+    /// argv0-anchoring (TDS 5.2). Bare names resolve only through
+    /// execPathPolicy downstream — never the host PATH (TDS 9).
+    /// </summary>
+    private static LoweredInvocation LowerShCommand(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var args = new List<string>();
+        var allLiteral = true;
+        foreach (var a in inv.Args)
+        {
+            var r = Resolve(a, substitute);
+            if (r.IsLiteral) args.Add(r.Value);
+            else allLiteral = false;
+        }
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+            rule.Method ?? inv.Method, Array.Empty<string>(), args, allLiteral,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>curl/wget "https://…": first literal http(s) URL argument → egress; any dynamic argument quarantines.</summary>
+    private static LoweredInvocation LowerShCurl(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var resolvedArgs = new List<string>();
+        foreach (var a in inv.Args)
+        {
+            var r = Resolve(a, substitute);
+            if (!r.IsLiteral)
+                return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                    $"curl URL is {KindName(r)}, not a constant literal");
+            resolvedArgs.Add(r.Value);
+        }
+        foreach (var value in resolvedArgs)
+        {
+            var egress = EgressFromUrl(rule, value);
+            if (egress is not null) return egress;
+        }
+        return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+            "curl command has no absolute http(s) URL argument");
+    }
+
+    /// <summary>nc host port: first two literal non-option args; any dynamic argument quarantines.</summary>
+    private static LoweredInvocation LowerShNc(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var literals = new List<string>();
+        foreach (var a in inv.Args)
+        {
+            var r = Resolve(a, substitute);
+            if (!r.IsLiteral)
+                return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                    $"nc host/port is {KindName(r)}, not a constant literal");
+            literals.Add(r.Value);
+        }
+        var operands = literals.Where(v => !v.StartsWith('-')).ToArray();
+        if (operands.Length < 2)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv, "nc host/port arguments missing");
+        if (!int.TryParse(operands[1], NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                $"nc port '{operands[1]}' is not a constant integer");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            operands[0].ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
+    }
+
+    /// <summary>ssh host: first literal non-option arg, default port 22 (rule defaultPort).</summary>
+    private static LoweredInvocation LowerShSsh(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var literals = new List<string>();
+        foreach (var a in inv.Args)
+        {
+            var r = Resolve(a, substitute);
+            if (!r.IsLiteral)
+                return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                    $"ssh host is {KindName(r)}, not a constant literal");
+            literals.Add(r.Value);
+        }
+        var host = literals.FirstOrDefault(v => !v.StartsWith('-'));
+        if (host is null)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv, "ssh host argument missing");
+        var port = rule.DefaultPort ?? 22;
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            host.ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
+    }
+
     private static LoweredInvocation LowerIngress(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
     {
         // new ServerSocket(port[, ...]): the port is the last literal numeric argument.
@@ -698,6 +938,39 @@ public static class GoCatalogLowering
 public static class JsCatalogLowering
 {
     public static LanguageCatalog Catalog { get; } = JsCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>PHP lowering entry point (TDS 7.3, M4).</summary>
+public static class PhpCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = PhpCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>PowerShell lowering entry point (TDS 7.3, M4; lexical parser, reduced confidence).</summary>
+public static class PowerShellCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = PowerShellCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>Bash lowering entry point (TDS 7.3, M4; lexical parser, reduced confidence).</summary>
+public static class BashCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = BashCatalog.LoadDefault();
 
     public static LoweredInvocation? Lower(
         InvocationDecl invocation,

@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "1f54bdfe9062fd6869beaa05779ae5a3955b403594fda05fc9b333620025b72a",
+  "BehaviorHash": "b683e83fa5eaffad1db683ee35a60cc6d9acea9dd291c7a96cad4b15b92c2bfa",
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 2,
@@ -28,5 +28,6 @@
       "TestId": "sut:status_client.remove_temp",
       "Rule": ""
     }
-  ]
+  ],
+  "LexicalParsers": []
 }

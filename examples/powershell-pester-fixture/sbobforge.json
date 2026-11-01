@@ -1,0 +1,17 @@
+{
+  "packageType": "nuget",
+  "packageName": "example-ps-core",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.ps1" ],
+  "testGlobs": [ "tests/**/*.ps1" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {
+    "git": "/usr/bin/git"
+  },
+  "allowParseError": []
+}

@@ -423,6 +423,146 @@ public class EndToEndTests
         Assert.Equal(3, result.Ir.Coverage.TestEntries);
     }
 
+    // ---- M4: PHP / PowerShell / Bash fixtures (#3) ----------------------
+
+    [Theory]
+    [InlineData("php-phpunit-fixture")]
+    [InlineData("powershell-pester-fixture")]
+    [InlineData("bash-bats-fixture")]
+    public void M4FixtureRegeneratesByteIdenticallyAndDoesNotDrift(string fixtureName)
+    {
+        using var temp = new TempDir(CopyFixtureToTemp(fixtureName));
+        var first = Generate(temp.Path);
+        var second = Generate(temp.Path);
+        Assert.Equal(first.SbobYaml, second.SbobYaml);
+        Assert.Equal(first.ProvenanceJsonl, second.ProvenanceJsonl);
+        Assert.Equal(first.CoverageJson, second.CoverageJson);
+        Assert.Equal(first.Ir.ComputeBehaviorHash(), second.Ir.ComputeBehaviorHash());
+
+        var repo = FindRepoRoot();
+        var golden = Path.Combine(repo, "examples", fixtureName, "sbob", first.SbobFileName);
+        if (File.Exists(golden))
+            Assert.Equal(File.ReadAllText(golden), first.SbobYaml);
+    }
+
+    [Fact]
+    public void PhpPhpunitFixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("php-phpunit-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(3, result.Ir.Opens.Count);
+        var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
+        Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
+        Assert.Equal(2, config.Provenance.Count);
+        Assert.Contains(config.Provenance, p => p.TestId.StartsWith("sut:Example.ConfigStore."));
+        Assert.Contains(config.Provenance, p => p.TestId.EndsWith("::testLoadsConfig"));
+
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+
+        var log = Assert.Single(result.Ir.Opens, o => o.Path == "/var/log/php-app.log");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, log.Flags);
+
+        // exec("git status", $output) → literal first token → execPathPolicy
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+
+        // curl_init("https://…") → egress
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+
+        // file_get_contents("/etc/app/users/" . $user . ".json") — non-constant path/URL
+        Assert.Contains(result.Ir.Coverage.Quarantined,
+            q => q.Reason.Contains("path/URL") && q.File.EndsWith("ConfigStore.php"));
+        // unlink → delete primitive, unrepresentable in the SBOB spec
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        // markTestSkipped and @requires tests excluded
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::testLegacyPath"));
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::testRequiresDatabase"));
+        Assert.Equal(4, result.Ir.Coverage.TestEntries);
+    }
+
+    [Fact]
+    public void PowerShellPesterFixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("powershell-pester-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(3, result.Ir.Opens.Count);
+        var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
+        Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
+        Assert.Equal(2, config.Provenance.Count);
+        Assert.Contains(config.Provenance, p => p.TestId.EndsWith("loads config"));
+
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+
+        var log = Assert.Single(result.Ir.Opens, o => o.Path == "/var/log/ps-app.log");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, log.Flags);
+
+        // & "git" "status", Start-Process and Invoke-Expression dedup to one exec
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+        Assert.Contains(exec.Provenance, p => p.CatalogRuleId == "ps.call-op");
+        Assert.Contains(exec.Provenance, p => p.CatalogRuleId == "ps.start-process");
+        Assert.Contains(exec.Provenance, p => p.CatalogRuleId == "ps.invoke-expression");
+
+        // Invoke-WebRequest -Uri "https://…" → egress
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+
+        // Add-Content -Path "/var/log/ps-$Name.log" — interpolated path quarantines
+        Assert.Contains(result.Ir.Coverage.Quarantined, q => q.Reason.Contains("interpolated"));
+        // Remove-Item → delete primitive
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        // It -Skip excluded
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
+        Assert.Equal(4, result.Ir.Coverage.TestEntries);
+
+        // lexical-parser marking (TDS 5.4): coverage list + sbob annotation
+        Assert.Equal(new[] { "powershell" }, result.Ir.Coverage.LexicalParserList.ToArray());
+        Assert.Contains("develapp.io/parser: lexical", result.SbobYaml);
+    }
+
+    [Fact]
+    public void BashBatsFixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("bash-bats-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(2, result.Ir.Opens.Count);
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, cache.Flags);
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+
+        var log = Assert.Single(result.Ir.Opens, o => o.Path == "/var/log/bash-app.log");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, log.Flags);
+
+        // `git status` command word → execPathPolicy argv
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+
+        // curl "https://…" → egress
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+
+        // "/var/log/$Name.log" redirect — interpolated path quarantines
+        Assert.Contains(result.Ir.Coverage.Quarantined, q => q.Reason.Contains("interpolated"));
+        // rm → delete primitive
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        // skipped @test excluded
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
+        Assert.Equal(4, result.Ir.Coverage.TestEntries);
+
+        // lexical-parser marking (TDS 5.4)
+        Assert.Equal(new[] { "bash" }, result.Ir.Coverage.LexicalParserList.ToArray());
+        Assert.Contains("develapp.io/parser: lexical", result.SbobYaml);
+    }
+
     private sealed class TempDir : IDisposable
     {
         public TempDir(string path) => Path = path;
