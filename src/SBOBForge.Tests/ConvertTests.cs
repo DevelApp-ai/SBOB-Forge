@@ -120,9 +120,11 @@ public class ConvertTests
         // payload below the annotation block is byte-identical (replay-lane
         // contract: the registry file differs from the emitted profile only in
         // the header and the dialect-marker annotation).
-        var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        var dir = (System.IO.DirectoryInfo?)new System.IO.DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "SBOBForge.sln")))
-            dir = dir.Parent!;
+            dir = dir.Parent;
+        if (dir is null)
+            throw new System.IO.FileNotFoundException("SBOBForge.sln not found in any parent of the test assembly directory");
         var examples = System.IO.Path.Combine(dir.FullName, "examples");
         var goldenCount = 0;
         foreach (var golden in System.IO.Directory.EnumerateFiles(examples, "*.sbob.yaml", System.IO.SearchOption.AllDirectories))
