@@ -4,25 +4,31 @@ using SBOBForge.Core;
 namespace SBOBForge.Parsing;
 
 /// <summary>
-/// Deterministic PowerShell lexical parser (TDS 5.4 Phase A): a fixed token
-/// scanner recognizing the catalog's call shapes — Pester v5 `Describe`/
-/// `Context`/`It [-Skip]` blocks, `function` blocks for SUT attribution,
-/// command invocations with `-Param value` named arguments, the call
+/// Deterministic PowerShell structural parser (TDS 5.4 Phase B): the fixed
+/// call-shape scanner of Phase A (Pester v5 `Describe`/`Context`/`It [-Skip]`
+/// blocks, command invocations with `-Param value` named arguments, the call
 /// operator `&amp;`, `New-Object TypeName(…)` / `[Type]::new(…)` construction,
-/// and `&gt;`/`&gt;&gt;` redirections. Not a full grammar: statements outside
-/// modeled blocks land in a `&lt;top-level&gt;` helper method (harness noise),
-/// and param blocks / expressions are tolerated but not modeled. Pinned as
-/// lock grammar "powershell" (backend "sbobforge-powershell"); every
-/// downstream artifact marks files from this backend `parser: lexical`
-/// (TDS 5.4). Unterminated strings or unbalanced braces are hard errors
-/// (TDS 13).
+/// and `&gt;`/`&gt;&gt;` redirections) is retained unchanged and driven by a
+/// structural statement pass modeling `function`/`filter`/`workflow` blocks
+/// (with `param(…)` and legacy `(...)` parameter lists), classes and enums,
+/// `if`/`elseif`/`else`, `switch`, `foreach`/`for`/`while`, `do`, `try`/
+/// `catch`/`finally`, `trap`, here-strings and backtick line continuations.
+/// Statements outside modeled blocks attribute to a `&lt;script&gt;` helper
+/// method (harness noise). Pinned as lock grammar "powershell" (backend
+/// "sbobforge-powershell"); the lock pins the sha256 of the authored
+/// PowerShell 7.4 grammar (Minotaur-Grammars PR #196), embedded byte-identical
+/// so `--frozen` verifies it without a network fetch. Unterminated strings or
+/// unbalanced braces are hard errors (TDS 13).
 /// </summary>
 public sealed class PowerShellSourceParser : ICodeModelParser
 {
     public const string BackendId = "sbobforge-powershell";
-    public const string Version = "1.0.0";
+    public const string Version = "2.0.0";
 
     string ICodeModelParser.BackendId => BackendId;
+
+    /// <summary>sha256 of the embedded PowerShell 7.4 grammar artifact (Minotaur-Grammars PR #196), pinned by the lock (TDS 5.4 Phase B).</summary>
+    public static string GrammarSha256 => GrammarResource.Sha256(GrammarResource.PowerShellKey);
 
     public CodeModel Parse(string relativePath, string sourceText)
     {
@@ -45,6 +51,13 @@ public sealed class PowerShellSourceParser : ICodeModelParser
             char c = src[i];
             if (c == '\n') { line++; i++; continue; }
             if (c is ' ' or '\t' or '\r') { i++; continue; }
+            // backtick line continuation: the newline is not counted, so the
+            // continued statement stays on one logical line (TDS 5.4 Phase B)
+            if (c == '`' && i + 1 < src.Length && (src[i + 1] == '\n' || src[i + 1] == '\r'))
+            {
+                i += (src[i + 1] == '\r' && i + 2 < src.Length && src[i + 2] == '\n') ? 3 : 2;
+                continue;
+            }
             if (c == '<' && src[i..].StartsWith("<#", StringComparison.Ordinal))
             {
                 int close = src.IndexOf("#>", i + 2, StringComparison.Ordinal);
@@ -57,6 +70,46 @@ public sealed class PowerShellSourceParser : ICodeModelParser
             {
                 while (i < src.Length && src[i] != '\n') i++;
                 continue;
+            }
+            // here-strings: @" … "@ / @' … '@ — opener immediately followed by a
+            // line break, closer is q + '@' at the start of a later line
+            if (c == '@' && i + 1 < src.Length && (src[i + 1] == '"' || src[i + 1] == '\''))
+            {
+                char q = src[i + 1];
+                int rest = i + 2;
+                if (rest < src.Length && (src[rest] == '\r' || src[rest] == '\n'))
+                {
+                    int startLine = line;
+                    int body = rest;
+                    if (src[body] == '\r' && body + 1 < src.Length && src[body + 1] == '\n') body += 2; else body++;
+                    string closer = q + "@";
+                    int end = -1, scan = body;
+                    while (scan < src.Length)
+                    {
+                        int le = scan;
+                        while (le < src.Length && src[le] != '\n') le++;
+                        if (src[scan..le].TrimEnd('\r').TrimStart().StartsWith(closer, StringComparison.Ordinal))
+                        { end = scan; break; }
+                        if (le >= src.Length) break;
+                        scan = le + 1;
+                    }
+                    if (end < 0) throw new ParseHardError($"{path}:{startLine}: unterminated here-string");
+                    string text = src[body..end].TrimEnd('\r', '\n');
+                    bool interp = false;
+                    if (q == '"')
+                        for (int k = 0; k + 1 < text.Length; k++)
+                            if (text[k] == '$' && (char.IsLetter(text[k + 1]) || text[k + 1] is '{' or '('))
+                            { interp = true; break; }
+                    line += src[i..end].Count(ch => ch == '\n');
+                    i = end;
+                    // consume the closer line
+                    while (i < src.Length && src[i] != '\n') i++;
+                    if (i < src.Length) { i++; line++; }
+                    toks.Add(q == '"'
+                        ? new Token(Tt.DQString, text, startLine, interp)
+                        : new Token(Tt.String, text, startLine));
+                    continue;
+                }
             }
             if (c == '\'')
             {
@@ -155,136 +208,179 @@ public sealed class PowerShellSourceParser : ICodeModelParser
         return (sb.ToString(), interp);
     }
 
-    // ---- lexical structural pass ------------------------------------------
+    // ---- structural pass (TDS 5.4 Phase B) -------------------------------
+
+    /// <summary>Statements attributed to one method body: modeled parameters and lowered invocations.</summary>
+    internal sealed class Scope
+    {
+        public List<string> Parameters { get; } = new();
+        public List<InvocationDecl> Invocations { get; } = new();
+    }
 
     private sealed class Parser
     {
         private readonly List<Token> _toks;
         private readonly string _path;
+        private readonly List<MethodDecl> _methods = new();
+        private readonly List<TypeDecl> _types = new(); // classes / enums
+        private readonly List<string> _describeStack = new();
 
         public Parser(List<Token> toks, string path) { _toks = toks; _path = path; }
-
-        private Token Cur => _toks[_pos];
-        private bool IsOp(string text) => Cur.Type == Tt.Op && Cur.Text == text;
-        private bool IsWord(string text) => Cur.Type == Tt.Ident && Cur.Text == text;
-        private Token Take() => _toks[_pos++];
-        private int _pos;
-
-        public CodeModel ParseFile()
-        {
-            var methods = new List<MethodDecl>();
-            var leftover = new List<Token>();
-            Walk(_toks, new List<string>(), methods, leftover);
-
-            // statements outside modeled blocks: harness/setup surface → helper noise rows
-            var leftoverInvocations = StatementScanner.Scan(leftover);
-            if (leftoverInvocations.Count > 0)
-                methods.Add(new MethodDecl("<top-level>", PseudoTypeName(), null, 0,
-                    Array.Empty<string>(), Array.Empty<AttributeDecl>(), leftoverInvocations));
-
-            return new CodeModel(_path, new[] { new TypeDecl(PseudoTypeName(), null, methods) }, null);
-        }
 
         private string PseudoTypeName() =>
             System.IO.Path.GetFileNameWithoutExtension(_path).Replace('.', '-');
 
-        /// <summary>Walks tokens: functions, Describe/Context scopes, It entries; everything else pools to `leftover`.</summary>
-        private void Walk(List<Token> toks, List<string> describeStack,
-            List<MethodDecl> methods, List<Token> leftover)
+        public CodeModel ParseFile()
+        {
+            var script = new Scope();
+            ScanScope(_toks, script);
+            // statements outside modeled blocks: harness/setup surface → helper noise rows
+            if (script.Invocations.Count > 0)
+                _methods.Add(new MethodDecl("<script>", PseudoTypeName(), null, 0,
+                    Array.Empty<string>(), Array.Empty<AttributeDecl>(), script.Invocations));
+            var mainType = new TypeDecl(PseudoTypeName(), null, _methods);
+            return new CodeModel(_path, new[] { mainType }.Concat(_types).ToArray(), null);
+        }
+
+        // ---- scope scanning ------------------------------------------------
+
+        private void ScanScope(List<Token> toks, Scope scope)
         {
             int i = 0;
             while (i < toks.Count)
             {
                 var t = toks[i];
-                // function Name { … } / function Name (params) { … }
-                if (t.Type == Tt.Ident && t.Text == "function")
+                if (t.Type == Tt.Eof) break;
+                if (t.Type == Tt.Op && (t.Text == "}" || t.Text == ")")) break; // enclosing group closer
+
+                if (t.Type == Tt.Ident && (IsCommandCandidate(toks, i)
+                        || (i > 0 && toks[i - 1].Type == Tt.Op && toks[i - 1].Text == "}")))
                 {
-                    int j = i + 1;
-                    if (j < toks.Count && toks[j].Type == Tt.Ident)
+                    // else / elseif / catch / finally are recognized right after a closed block
+                    switch (t.Text)
                     {
-                        string name = toks[j].Text;
-                        int line = toks[j].Line;
-                        int k = j + 1;
-                        if (k < toks.Count && toks[k].Type == Tt.Op && toks[k].Text == "(")
-                        {
-                            int depth = 0;
-                            k++;
-                            while (k < toks.Count)
-                            {
-                                if (toks[k].Type == Tt.Op && toks[k].Text == "(") depth++;
-                                else if (toks[k].Type == Tt.Op && toks[k].Text == ")") { if (depth-- == 0) { k++; break; } }
-                                k++;
-                            }
-                        }
-                        if (k < toks.Count && toks[k].Type == Tt.Op && toks[k].Text == "{")
-                        {
-                            var body = CollectBalanced(toks, ref k, '{', '}');
-                            methods.Add(new MethodDecl(name, PseudoTypeName(), null, line,
-                                Array.Empty<string>(), Array.Empty<AttributeDecl>(),
-                                StatementScanner.Scan(body)));
-                            i = k;
+                        case "using":
+                            SkipToLineEnd(toks, ref i);
                             continue;
-                        }
+                        case "function":
+                        case "filter":
+                        case "workflow":
+                            if (ParseFunction(toks, ref i, scope)) continue;
+                            break;
+                        case "class":
+                            if (ParseClass(toks, ref i)) continue;
+                            break;
+                        case "enum":
+                            if (ParseEnum(toks, ref i)) continue;
+                            break;
+                        case "param":
+                            if (ParseParamBlock(toks, ref i, scope)) continue;
+                            break;
+                        case "if":
+                        case "elseif":
+                            ParseIf(toks, ref i, scope);
+                            continue;
+                        case "else":
+                            if (ParseBlockAfterKeyword(toks, ref i, scope)) continue;
+                            break;
+                        case "switch":
+                            ParseSwitch(toks, ref i, scope);
+                            continue;
+                        case "foreach":
+                        case "for":
+                        case "while":
+                            ParseLoop(toks, ref i, scope);
+                            continue;
+                        case "do":
+                            ParseDo(toks, ref i, scope);
+                            continue;
+                        case "try":
+                            if (ParseBlockAfterKeyword(toks, ref i, scope)) continue;
+                            break;
+                        case "catch":
+                        case "finally":
+                            if (ParseCatchFinally(toks, ref i, scope)) continue;
+                            break;
+                        case "trap":
+                            ParseTrap(toks, ref i, scope);
+                            continue;
+                        case "return":
+                        case "exit":
+                        case "throw":
+                        case "break":
+                        case "continue":
+                            // the keyword itself is not an invocation; the remainder
+                            // of the statement is scanned generically (e.g. the
+                            // parenthesized group of `return (…)` is scanned)
+                            i++;
+                            continue;
+                        case "Describe":
+                        case "Context":
+                            if (ParseDescribe(toks, ref i, scope)) continue;
+                            break;
+                        case "It":
+                            if (ParseIt(toks, ref i)) continue;
+                            break;
                     }
-                    leftover.Add(t);
-                    i++;
+                }
+
+                // brace / paren groups at a statement start
+                if (t.Type == Tt.Op && t.Text == "{")
+                {
+                    var inner = CollectBalanced(toks, ref i, '{', '}');
+                    ScanScope(inner, scope);
                     continue;
                 }
-                // Describe "title" { … } / Context "title" { … }
-                if (t.Type == Tt.Ident && (t.Text == "Describe" || t.Text == "Context")
-                    && i + 1 < toks.Count && toks[i + 1].Type is Tt.String or Tt.DQString)
+                if (t.Type == Tt.Op && t.Text == "(")
                 {
-                    var title = toks[i + 1].Text;
-                    int k = i + 2;
-                    if (k < toks.Count && toks[k].Type == Tt.Op && toks[k].Text == "{")
-                    {
-                        describeStack.Add(title);
-                        var inner = CollectBalanced(toks, ref k, '{', '}');
-                        Walk(inner, describeStack, methods, leftover);
-                        describeStack.RemoveAt(describeStack.Count - 1);
-                        i = k;
-                        continue;
-                    }
+                    var inner = CollectBalanced(toks, ref i, '(', ')');
+                    ScanScope(inner, scope);
+                    continue;
                 }
-                // It "title" [-Skip] { … } → ps.entry-attributed method
-                if (t.Type == Tt.Ident && t.Text == "It"
-                    && i + 1 < toks.Count && toks[i + 1].Type is Tt.String or Tt.DQString)
+
+                var stmt = CollectStatement(toks, ref i);
+                scope.Invocations.AddRange(StatementScanner.Scan(stmt));
+            }
+        }
+
+        /// <summary>Mirrors the Phase A scanner's command-position rule, so keyword dispatch fires exactly where invocations start.</summary>
+        private static bool IsCommandCandidate(List<Token> toks, int i)
+        {
+            var t = toks[i];
+            if (i == 0) return true;
+            var p = toks[i - 1];
+            if (p.Type == Tt.Op && p.Text is ";" or "|" or "{" or "(" or "&&" or "||" or "=") return true;
+            if (p.Type == Tt.Op && p.Text == ")" && p.Line < t.Line) return true;
+            return p.Line < t.Line && p.Type != Tt.Op;
+        }
+
+        private static void SkipToLineEnd(List<Token> toks, ref int i)
+        {
+            int line = toks[i].Line;
+            while (i < toks.Count && toks[i].Line == line && toks[i].Type != Tt.Eof) i++;
+        }
+
+        /// <summary>Collects one statement's tokens (same end rules as the Phase A arg scanner, so invocation boundaries are identical).</summary>
+        private static List<Token> CollectStatement(List<Token> toks, ref int i)
+        {
+            var stmt = new List<Token>();
+            if (i >= toks.Count || toks[i].Type == Tt.Eof) return stmt;
+            stmt.Add(toks[i]);
+            i++;
+            while (i < toks.Count)
+            {
+                var a = toks[i];
+                if (a.Type == Tt.Eof) break;
+                if (a.Type == Tt.Op)
                 {
-                    var title = toks[i + 1].Text;
-                    int line = toks[i].Line;
-                    int k = i + 2;
-                    bool skip = false;
-                    while (k < toks.Count
-                           && !(toks[k].Type == Tt.Op && toks[k].Text == "{")
-                           && toks[k].Type != Tt.Eof)
-                    {
-                        if (toks[k].Type == Tt.Param && toks[k].Text == "-Skip") skip = true;
-                        k++;
-                    }
-                    if (k < toks.Count && toks[k].Type == Tt.Op && toks[k].Text == "{")
-                    {
-                        var body = CollectBalanced(toks, ref k, '{', '}');
-                        var full = describeStack.Count > 0
-                            ? string.Join(" > ", describeStack) + " > " + title
-                            : title;
-                        var attrs = new List<AttributeDecl>
-                        {
-                            new("ps.entry", new List<AttributeArg>
-                            {
-                                new(ArgKind.Literal, title, "title"),
-                                new(ArgKind.Literal, full, "full"),
-                                new(ArgKind.Literal, skip ? "skip" : "run", "state")
-                            })
-                        };
-                        methods.Add(new MethodDecl(title + "@" + line, PseudoTypeName(), null, line,
-                            Array.Empty<string>(), attrs, StatementScanner.Scan(body)));
-                        i = k;
-                        continue;
-                    }
+                    if (a.Text == ";") { i++; break; } // separator consumed, statement ends
+                    if (a.Text is "{" or "}" or ")") break; // block start / group closer
                 }
-                leftover.Add(t);
+                if (a.Type == Tt.Ident && a.Line > stmt[^1].Line) break; // new command word on a later line
+                stmt.Add(a);
                 i++;
             }
+            return stmt;
         }
 
         private static List<Token> CollectBalanced(List<Token> toks, ref int i, char open, char close)
@@ -295,6 +391,7 @@ public sealed class PowerShellSourceParser : ICodeModelParser
             while (i < toks.Count)
             {
                 var t = toks[i];
+                if (t.Type == Tt.Eof) break;
                 if (t.Type == Tt.Op && t.Text == open.ToString()) { depth++; inner.Add(t); i++; continue; }
                 if (t.Type == Tt.Op && t.Text == close.ToString())
                 {
@@ -305,14 +402,325 @@ public sealed class PowerShellSourceParser : ICodeModelParser
                 inner.Add(t);
                 i++;
             }
-            throw new ParseHardError("unbalanced '{'");
+            throw new ParseHardError($"unbalanced '{open}'");
+        }
+
+        private static bool AtOp(List<Token> toks, int i, string text) =>
+            i < toks.Count && toks[i].Type == Tt.Op && toks[i].Text == text;
+
+        /// <summary>Variable name without the leading `$` / `${…}` decoration.</summary>
+        private static string VarName(string tokenText)
+        {
+            var name = tokenText.TrimStart('$');
+            if (name.StartsWith('{') && name.EndsWith('}')) name = name[1..^1];
+            return name;
+        }
+
+        private static void AddParameterNames(List<Token> group, Scope scope)
+        {
+            // $Var tokens outside `= default` zones are parameter names;
+            // [attributes], types and defaults are skipped.
+            bool inDefault = false;
+            foreach (var a in group)
+            {
+                if (a.Type == Tt.Op && a.Text == "=") inDefault = true;
+                else if (a.Type == Tt.Op && (a.Text == "," || a.Text == ";")) inDefault = false;
+                else if (!inDefault && a.Type == Tt.Var) scope.Parameters.Add(VarName(a.Text));
+            }
+        }
+
+        // ---- keyword constructs --------------------------------------------
+
+        /// <summary>function/filter/workflow Name [($a, $b)] { … } — legacy paren names and a `param(…)` block both model parameters.</summary>
+        private bool ParseFunction(List<Token> toks, ref int i, Scope parentScope)
+        {
+            int keyword = i;
+            i++;
+            if (i >= toks.Count || toks[i].Type != Tt.Ident) { i = keyword; return false; }
+            string name = toks[i].Text;
+            int line = toks[i].Line;
+            i++;
+            var child = new Scope();
+            if (AtOp(toks, i, "("))
+            {
+                var names = CollectBalanced(toks, ref i, '(', ')');
+                foreach (var a in names)
+                    if (a.Type == Tt.Var) child.Parameters.Add(VarName(a.Text));
+            }
+            if (!AtOp(toks, i, "{")) { i = keyword; return false; }
+            var body = CollectBalanced(toks, ref i, '{', '}');
+            ScanScope(body, child);
+            _methods.Add(new MethodDecl(name, PseudoTypeName(), null, line,
+                child.Parameters, Array.Empty<AttributeDecl>(), child.Invocations));
+            return true;
+        }
+
+        /// <summary>param(…) block — models parameters; emits no invocation.</summary>
+        private bool ParseParamBlock(List<Token> toks, ref int i, Scope scope)
+        {
+            int keyword = i;
+            i++;
+            if (!AtOp(toks, i, "(")) { i = keyword; return false; }
+            var group = CollectBalanced(toks, ref i, '(', ')');
+            AddParameterNames(group, scope);
+            return true;
+        }
+
+        /// <summary>if/elseif (…) { … } — condition and body attribute to the same scope.</summary>
+        private void ParseIf(List<Token> toks, ref int i, Scope scope)
+        {
+            i++;
+            if (AtOp(toks, i, "("))
+            {
+                var cond = CollectBalanced(toks, ref i, '(', ')');
+                ScanScope(cond, scope);
+            }
+            if (AtOp(toks, i, "{"))
+            {
+                var body = CollectBalanced(toks, ref i, '{', '}');
+                ScanScope(body, scope);
+            }
+        }
+
+        /// <summary>else { … } / try { … } — a block directly after the keyword.</summary>
+        private bool ParseBlockAfterKeyword(List<Token> toks, ref int i, Scope scope)
+        {
+            int keyword = i;
+            i++;
+            if (!AtOp(toks, i, "{")) { i = keyword; return false; }
+            var body = CollectBalanced(toks, ref i, '{', '}');
+            ScanScope(body, scope);
+            return true;
+        }
+
+        /// <summary>catch [type]/(types) { … } / finally { … } — recognized right after a closed block.</summary>
+        private bool ParseCatchFinally(List<Token> toks, ref int i, Scope scope)
+        {
+            int keyword = i;
+            i++;
+            if (AtOp(toks, i, "[")) CollectBalanced(toks, ref i, '[', ']');
+            else if (AtOp(toks, i, "(")) CollectBalanced(toks, ref i, '(', ')');
+            if (!AtOp(toks, i, "{")) { i = keyword; return false; }
+            var body = CollectBalanced(toks, ref i, '{', '}');
+            ScanScope(body, scope);
+            return true;
+        }
+
+        /// <summary>switch [-flags] (…) { pattern { … } default { … } } — conditions and case bodies attribute to the same scope.</summary>
+        private void ParseSwitch(List<Token> toks, ref int i, Scope scope)
+        {
+            i++;
+            while (i < toks.Count && toks[i].Type == Tt.Param) i++;
+            if (AtOp(toks, i, "("))
+            {
+                var cond = CollectBalanced(toks, ref i, '(', ')');
+                ScanScope(cond, scope);
+            }
+            if (!AtOp(toks, i, "{")) return;
+            var body = CollectBalanced(toks, ref i, '{', '}');
+            int j = 0;
+            while (j < body.Count)
+            {
+                if (body[j].Type == Tt.Op && body[j].Text == "{")
+                {
+                    var caseBody = CollectBalanced(body, ref j, '{', '}');
+                    ScanScope(caseBody, scope);
+                    continue;
+                }
+                j++; // pattern / separator tokens
+            }
+        }
+
+        /// <summary>foreach/for/while (…) { … } — condition and body attribute to the same scope.
+        /// For foreach the `($x in &lt;collection&gt;)` loop-variable prefix is skipped so the
+        /// collection expression itself is scanned in command position.</summary>
+        private void ParseLoop(List<Token> toks, ref int i, Scope scope)
+        {
+            bool isForeach = toks[i].Text == "foreach";
+            i++;
+            if (AtOp(toks, i, "("))
+            {
+                var cond = CollectBalanced(toks, ref i, '(', ')');
+                if (isForeach)
+                {
+                    int inPos = -1;
+                    for (int j = 0; j < cond.Count; j++)
+                    {
+                        if (cond[j].Type == Tt.Ident && cond[j].Text == "in") { inPos = j; break; }
+                    }
+                    ScanScope(inPos >= 0 ? cond.Skip(inPos + 1).ToList() : cond, scope);
+                }
+                else
+                {
+                    ScanScope(cond, scope);
+                }
+            }
+            if (AtOp(toks, i, "{"))
+            {
+                var body = CollectBalanced(toks, ref i, '{', '}');
+                ScanScope(body, scope);
+            }
+        }
+
+        /// <summary>do { … } [while/until (…)]</summary>
+        private void ParseDo(List<Token> toks, ref int i, Scope scope)
+        {
+            i++;
+            if (AtOp(toks, i, "{"))
+            {
+                var body = CollectBalanced(toks, ref i, '{', '}');
+                ScanScope(body, scope);
+            }
+            if (i < toks.Count && toks[i].Type == Tt.Ident && toks[i].Text is "while" or "until")
+            {
+                i++;
+                if (AtOp(toks, i, "("))
+                {
+                    var cond = CollectBalanced(toks, ref i, '(', ')');
+                    ScanScope(cond, scope);
+                }
+            }
+        }
+
+        /// <summary>trap [type] { … }</summary>
+        private void ParseTrap(List<Token> toks, ref int i, Scope scope)
+        {
+            i++;
+            if (AtOp(toks, i, "[")) CollectBalanced(toks, ref i, '[', ']');
+            if (AtOp(toks, i, "{"))
+            {
+                var body = CollectBalanced(toks, ref i, '{', '}');
+                ScanScope(body, scope);
+            }
+        }
+
+        /// <summary>class Name [: bases] { members } — methods become a TypeDecl; properties are skipped.</summary>
+        private bool ParseClass(List<Token> toks, ref int i)
+        {
+            int keyword = i;
+            i++;
+            if (i >= toks.Count || toks[i].Type != Tt.Ident) { i = keyword; return false; }
+            string name = toks[i].Text;
+            i++;
+            while (i < toks.Count && !AtOp(toks, i, "{") && toks[i].Type != Tt.Eof) i++; // base list / newlines
+            if (!AtOp(toks, i, "{")) { i = keyword; return false; }
+            var body = CollectBalanced(toks, ref i, '{', '}');
+            var members = new List<MethodDecl>();
+            int j = 0;
+            while (j < body.Count)
+            {
+                var b = body[j];
+                if (b.Type == Tt.Op && b.Text == "[") { CollectBalanced(body, ref j, '[', ']'); continue; }
+                if (b.Type == Tt.Ident && (b.Text == "hidden" || b.Text == "static")) { j++; continue; }
+                if (b.Type == Tt.Ident && j + 1 < body.Count && body[j + 1].Type == Tt.Op && body[j + 1].Text == "(")
+                {
+                    int line = b.Line;
+                    string mname = b.Text;
+                    j++;
+                    var paramGroup = CollectBalanced(body, ref j, '(', ')');
+                    var child = new Scope();
+                    AddParameterNames(paramGroup, child);
+                    while (j < body.Count && !AtOp(body, j, "{") && body[j].Type != Tt.Eof) j++; // `: ReturnType`
+                    if (j < body.Count && AtOp(body, j, "{"))
+                    {
+                        var mbody = CollectBalanced(body, ref j, '{', '}');
+                        ScanScope(mbody, child);
+                        members.Add(new MethodDecl(mname, name, null, line,
+                            child.Parameters, Array.Empty<AttributeDecl>(), child.Invocations));
+                    }
+                    continue;
+                }
+                j++; // properties / separators
+            }
+            _types.Add(new TypeDecl(name, null, members));
+            return true;
+        }
+
+        /// <summary>enum Name { … } — a TypeDecl with no methods.</summary>
+        private bool ParseEnum(List<Token> toks, ref int i)
+        {
+            int keyword = i;
+            i++;
+            if (i >= toks.Count || toks[i].Type != Tt.Ident) { i = keyword; return false; }
+            string name = toks[i].Text;
+            i++;
+            if (!AtOp(toks, i, "{")) { i = keyword; return false; }
+            CollectBalanced(toks, ref i, '{', '}');
+            _types.Add(new TypeDecl(name, null, Array.Empty<MethodDecl>()));
+            return true;
+        }
+
+        // ---- Pester blocks -------------------------------------------------
+
+        /// <summary>Describe/Context "title" [-params] { … } — body recurses into the same scope; nested titles build the entry path.</summary>
+        private bool ParseDescribe(List<Token> toks, ref int i, Scope scope)
+        {
+            if (i + 1 >= toks.Count || toks[i + 1].Type is not (Tt.String or Tt.DQString)) return false;
+            string title = toks[i + 1].Text;
+            int k = i + 2;
+            while (k < toks.Count && toks[k].Type != Tt.Eof)
+            {
+                var a = toks[k];
+                if (a.Type == Tt.Op && a.Text == "{")
+                {
+                    _describeStack.Add(title);
+                    var inner = CollectBalanced(toks, ref k, '{', '}');
+                    ScanScope(inner, scope);
+                    _describeStack.RemoveAt(_describeStack.Count - 1);
+                    i = k;
+                    return true;
+                }
+                if (a.Type == Tt.Op && (a.Text == ";" || a.Text == "}" || a.Text == ")")) break;
+                if (a.Type == Tt.Ident && a.Line > toks[k - 1].Line) break;
+                k++;
+            }
+            return false; // not a block shape → generic command invocation
+        }
+
+        /// <summary>It "title" [-Skip] { … } → ps.entry-attributed method (same contract as Phase A).</summary>
+        private bool ParseIt(List<Token> toks, ref int i)
+        {
+            if (i + 1 >= toks.Count || toks[i + 1].Type is not (Tt.String or Tt.DQString)) return false;
+            var title = toks[i + 1].Text;
+            int line = toks[i].Line;
+            int k = i + 2;
+            bool skip = false;
+            while (k < toks.Count && toks[k].Type != Tt.Eof)
+            {
+                var a = toks[k];
+                if (a.Type == Tt.Op && a.Text == "{")
+                {
+                    var body = CollectBalanced(toks, ref k, '{', '}');
+                    var full = _describeStack.Count > 0
+                        ? string.Join(" > ", _describeStack) + " > " + title
+                        : title;
+                    var attrs = new List<AttributeDecl>
+                    {
+                        new("ps.entry", new List<AttributeArg>
+                        {
+                            new(ArgKind.Literal, title, "title"),
+                            new(ArgKind.Literal, full, "full"),
+                            new(ArgKind.Literal, skip ? "skip" : "run", "state")
+                        })
+                    };
+                    _methods.Add(new MethodDecl(title + "@" + line, PseudoTypeName(), null, line,
+                        Array.Empty<string>(), attrs, StatementScanner.Scan(body)));
+                    i = k;
+                    return true;
+                }
+                if (a.Type == Tt.Op && (a.Text == ";" || a.Text == "}" || a.Text == ")")) break;
+                if (a.Type == Tt.Param && a.Text == "-Skip") skip = true;
+                if (a.Type == Tt.Ident && a.Line > toks[k - 1].Line) break;
+                k++;
+            }
+            return false; // not a block shape → generic command invocation
         }
     }
 
     /// <summary>
-    /// The fixed call-shape scanner (TDS 5.4 Phase A): recognizes command
-    /// words at statement starts with positional / `-Param value` named
-    /// arguments, the `&amp;` call operator, `New-Object Type(…)` and
+    /// The fixed call-shape scanner (TDS 5.4 Phase A, retained): recognizes
+    /// command words at statement starts with positional / `-Param value`
+    /// named arguments, the `&amp;` call operator, `New-Object Type(…)` and
     /// `[Type]::new(…)` constructions, and `&gt;` / `&gt;&gt;` redirections.
     /// </summary>
     internal static class StatementScanner

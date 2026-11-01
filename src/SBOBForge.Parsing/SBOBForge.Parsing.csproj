@@ -4,8 +4,17 @@
     <ProjectReference Include="..\SBOBForge.Core\SBOBForge.Core.csproj" />
   </ItemGroup>
 
+  <!-- TDS 5.4 Phase B: the authored PowerShell 7.4 / Bash 5 grammars
+       (Minotaur-Grammars, PR #196) are embedded byte-identical so the
+       grammar-lock sha256 pins are verifiable in frozen mode without a
+       network fetch (same self-contained posture as the catalogs). -->
   <ItemGroup>
-    <PackageReference Include="DevelApp.Minotaur" Version="1.5.0" />
+    <EmbeddedResource Include="Grammars\PowerShell.grammar" />
+    <EmbeddedResource Include="Grammars\Bash.grammar" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DevelApp.Minotaur" Version="1.5.25" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
