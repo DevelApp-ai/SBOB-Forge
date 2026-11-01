@@ -28,6 +28,6 @@ jobs:
       # Every fixture SBOB must regenerate byte-identically from the pinned lock.
       - name: Drift gate (all fixtures --check --frozen)
         run: |
-          for fixture in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-testing js-jest ts-vitest php-phpunit powershell-pester bash-bats; do
+          for fixture in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-testing js-jest ts-vitest php-phpunit powershell-pester bash-bats c-googletest cpp-catch2; do
             dotnet run --no-build --project src/SBOBForge.Cli -- generate "examples/$fixture-fixture" --check --frozen
           done

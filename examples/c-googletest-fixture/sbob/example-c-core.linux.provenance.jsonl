@@ -1,0 +1,9 @@
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:\u003Cglobal\u003E.run_git_status",  "File": "sut/c/store.c",  "Line": 27,  "Tier": "Literal",  "Rule": "c.execvp"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "tests/c/store_test.c::ConfigStore.RunsGitStatus",  "File": "sut/c/store.c",  "Line": 27,  "Tier": "Literal",  "Rule": "c.execvp"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "sut:\u003Cglobal\u003E.save_cache",  "File": "sut/c/store.c",  "Line": 13,  "Tier": "Pattern",  "Rule": "c.open"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "tests/c/store_test.c::ConfigStore.WritesCache",  "File": "sut/c/store.c",  "Line": 13,  "Tier": "Pattern",  "Rule": "c.open"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "sut:\u003Cglobal\u003E.open_config",  "File": "sut/c/store.c",  "Line": 8,  "Tier": "Literal",  "Rule": "c.fopen"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "tests/c/store_test.c::ConfigStore.OpensConfigReadOnly",  "File": "sut/c/store.c",  "Line": 8,  "Tier": "Literal",  "Rule": "c.fopen"}
+{  "Primitive": "open",  "Identifier": "/var/log/c-app.log",  "TestId": "sut:\u003Cglobal\u003E.append_log",  "File": "sut/c/store.c",  "Line": 22,  "Tier": "Literal",  "Rule": "c.fopen"}
+{  "Primitive": "open",  "Identifier": "/var/log/c-app.log",  "TestId": "tests/c/store_test.c::ConfigStore.AppendsLog",  "File": "sut/c/store.c",  "Line": 22,  "Tier": "Literal",  "Rule": "c.fopen"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:\u003Cglobal\u003E.fetch_status",  "File": "sut/c/store.c",  "Line": 34,  "Tier": "Literal",  "Rule": "c.getaddrinfo"}

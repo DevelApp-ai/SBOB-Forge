@@ -1,0 +1,54 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "100f77234cfb39f8a575787871354806acb82e1077ac64fa515cada426d79e53",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 4,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an identifier, not a constant literal",
+      "File": "sut/c/store.c",
+      "Line": 42,
+      "TestId": "sut:\u003Cglobal\u003E.load_user",
+      "Rule": "c.fopen"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/c/store_test.c",
+      "Line": 24,
+      "TestId": "tests/c/store_test.c::ConfigStore.SkippedLegacyPath"
+    },
+    {
+      "Description": "test helper (not an entry method): .GTEST_SKIP",
+      "File": "tests/c/store_test.c",
+      "Line": 26,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): .fopen",
+      "File": "tests/c/store_test.c",
+      "Line": 27,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): .system",
+      "File": "tests/c/store_test.c",
+      "Line": 32,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/c/store.c",
+      "Line": 47,
+      "TestId": "sut:\u003Cglobal\u003E.clean_cache",
+      "Rule": ""
+    }
+  ],
+  "LexicalParsers": []
+}

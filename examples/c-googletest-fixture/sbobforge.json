@@ -1,0 +1,17 @@
+{
+  "packageType": "generic",
+  "packageName": "example/c-core",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.c" ],
+  "testGlobs": [ "tests/**/*.c" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {
+    "git": "/usr/bin/git"
+  },
+  "allowParseError": []
+}
