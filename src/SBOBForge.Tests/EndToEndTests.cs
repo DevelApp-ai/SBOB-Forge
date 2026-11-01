@@ -522,9 +522,8 @@ public class EndToEndTests
         Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
         Assert.Equal(4, result.Ir.Coverage.TestEntries);
 
-        // lexical-parser marking (TDS 5.4): coverage list + sbob annotation
-        Assert.Equal(new[] { "powershell" }, result.Ir.Coverage.LexicalParserList.ToArray());
-        Assert.Contains("develapp.io/parser: lexical", result.SbobYaml);
+        // TDS 5.4 Phase B: powershell is structural now — no parser-tier annotation
+        Assert.DoesNotContain("develapp.io/parser", result.SbobYaml);
     }
 
     [Fact]
@@ -558,9 +557,8 @@ public class EndToEndTests
         Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
         Assert.Equal(4, result.Ir.Coverage.TestEntries);
 
-        // lexical-parser marking (TDS 5.4)
-        Assert.Equal(new[] { "bash" }, result.Ir.Coverage.LexicalParserList.ToArray());
-        Assert.Contains("develapp.io/parser: lexical", result.SbobYaml);
+        // TDS 5.4 Phase B: bash is structural now — no parser-tier annotation
+        Assert.DoesNotContain("develapp.io/parser", result.SbobYaml);
     }
 
     // ---- M5: C (GoogleTest) / C++ (Catch2) fixtures (#8) ----------------
