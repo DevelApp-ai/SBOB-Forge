@@ -9,6 +9,22 @@
       "Version": "1",
       "Sha256": "744373e45e074e620e074127973d8aa0cce97ab638ebd5b54a9fd76ae20a7667"
     },
+    "c-catalog": {
+      "Version": "1",
+      "Sha256": "679c3698c03b6cd4d3b572a679f2c4fd66718938b104dbe9a2b97f9839a6a233"
+    },
+    "c17": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
+    "cpp-catalog": {
+      "Version": "1",
+      "Sha256": "2d5bd5aa9c4a34ab92ae9b7813316b6c02f7947985762d756a7997ff891354db"
+    },
+    "cpp20": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
     "csharp": {
       "Version": "4.11.0",
       "Sha256": ""
