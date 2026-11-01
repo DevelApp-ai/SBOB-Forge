@@ -1,0 +1,17 @@
+{
+  "packageType": "generic",
+  "packageName": "example-bash-core",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.sh" ],
+  "testGlobs": [ "tests/**/*.bats" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {
+    "git": "/usr/bin/git"
+  },
+  "allowParseError": []
+}

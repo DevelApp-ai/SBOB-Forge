@@ -1,0 +1,21 @@
+{
+  "id": "php",
+  "version": 1,
+  "rules": [
+    { "id": "php.fopen",             "kind": "openModeString",     "method": "fopen" },
+    { "id": "php.file-get-contents", "kind": "phpFileGetContents", "method": "file_get_contents" },
+    { "id": "php.file-put-contents", "kind": "open",               "method": "file_put_contents", "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "php.mkdir",             "kind": "open",               "method": "mkdir",   "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "php.unlink",            "kind": "unrepresentable",   "method": "unlink",   "unrepresentablePrimitive": "delete" },
+    { "id": "php.rmdir",             "kind": "unrepresentable",   "method": "rmdir",   "unrepresentablePrimitive": "delete" },
+
+    { "id": "php.exec",              "kind": "execTokens",        "method": "exec" },
+    { "id": "php.shell-exec",        "kind": "execTokens",        "method": "shell_exec" },
+    { "id": "php.system",            "kind": "execTokens",        "method": "system" },
+    { "id": "php.passthru",          "kind": "execTokens",        "method": "passthru" },
+    { "id": "php.proc-open",         "kind": "execTokens",        "method": "proc_open" },
+    { "id": "php.popen",             "kind": "execTokens",        "method": "popen" },
+
+    { "id": "php.curl-init",         "kind": "egress",            "method": "curl_init" }
+  ]
+}

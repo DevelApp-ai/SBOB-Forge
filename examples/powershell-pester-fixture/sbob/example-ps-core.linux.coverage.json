@@ -1,0 +1,44 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "fb6e2f2dda7ee21fd3e6b411d67b89c96beada43379c146ce5f6e3aa59d9876d",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 4,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an interpolated string, not a constant literal",
+      "File": "sut/ps/config-store.ps1",
+      "Line": 17,
+      "TestId": "sut:config-store.Add-DynamicLog",
+      "Rule": "ps.add-content"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/ps/config-store.tests.ps1",
+      "Line": 18,
+      "TestId": "tests/ps/config-store.tests.ps1::config store \u003E legacy path"
+    },
+    {
+      "Description": "test helper (not an entry method): .Add-Content",
+      "File": "tests/ps/config-store.tests.ps1",
+      "Line": 19,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/ps/config-store.ps1",
+      "Line": 37,
+      "TestId": "sut:config-store.Remove-Cache",
+      "Rule": ""
+    }
+  ],
+  "LexicalParsers": [
+    "powershell"
+  ]
+}

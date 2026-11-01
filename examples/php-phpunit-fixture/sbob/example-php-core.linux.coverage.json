@@ -1,0 +1,60 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "d55ddc37d43e934cbb98b51d8eddfa62568ba829d6273a7c5cc2cdfcc5e974b1",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 4,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "path/URL is a non-constant expression, not a constant literal",
+      "File": "sut/php/ConfigStore.php",
+      "Line": 20,
+      "TestId": "sut:Example.ConfigStore.loadUser",
+      "Rule": "php.file-get-contents"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 38,
+      "TestId": "tests/php/ConfigStoreTest.php::ConfigStoreTest::testLegacyPath"
+    },
+    {
+      "Description": "test helper (not an entry method): this.markTestSkipped",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 40,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): .file_get_contents",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 41,
+      "TestId": ""
+    },
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 47,
+      "TestId": "tests/php/ConfigStoreTest.php::ConfigStoreTest::testRequiresDatabase"
+    },
+    {
+      "Description": "test helper (not an entry method): store.loadConfig",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 50,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/php/ConfigStore.php",
+      "Line": 49,
+      "TestId": "sut:Example.ConfigStore.cleanCache",
+      "Rule": ""
+    }
+  ],
+  "LexicalParsers": []
+}

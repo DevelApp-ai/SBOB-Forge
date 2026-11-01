@@ -1,0 +1,11 @@
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:config-store.Invoke-GitStatus",  "File": "sut/ps/config-store.ps1",  "Line": 21,  "Tier": "Pattern",  "Rule": "ps.call-op"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "tests/ps/config-store.tests.ps1::config store \u003E runs git status",  "File": "sut/ps/config-store.ps1",  "Line": 21,  "Tier": "Pattern",  "Rule": "ps.call-op"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:config-store.Start-GitStatus",  "File": "sut/ps/config-store.ps1",  "Line": 25,  "Tier": "Pattern",  "Rule": "ps.start-process"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:config-store.Invoke-Shell",  "File": "sut/ps/config-store.ps1",  "Line": 33,  "Tier": "Pattern",  "Rule": "ps.invoke-expression"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "sut:config-store.Save-Cache",  "File": "sut/ps/config-store.ps1",  "Line": 8,  "Tier": "Pattern",  "Rule": "ps.set-content"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "tests/ps/config-store.tests.ps1::config store \u003E saves cache",  "File": "sut/ps/config-store.ps1",  "Line": 8,  "Tier": "Pattern",  "Rule": "ps.set-content"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "sut:config-store.Load-Config",  "File": "sut/ps/config-store.ps1",  "Line": 2,  "Tier": "Literal",  "Rule": "ps.get-content"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "tests/ps/config-store.tests.ps1::config store \u003E loads config",  "File": "sut/ps/config-store.ps1",  "Line": 2,  "Tier": "Literal",  "Rule": "ps.get-content"}
+{  "Primitive": "open",  "Identifier": "/var/log/ps-app.log",  "TestId": "sut:config-store.Add-LogEntry",  "File": "sut/ps/config-store.ps1",  "Line": 12,  "Tier": "Literal",  "Rule": "ps.add-content"}
+{  "Primitive": "open",  "Identifier": "/var/log/ps-app.log",  "TestId": "tests/ps/config-store.tests.ps1::config store \u003E appends log",  "File": "sut/ps/config-store.ps1",  "Line": 12,  "Tier": "Literal",  "Rule": "ps.add-content"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:config-store.Get-Status",  "File": "sut/ps/config-store.ps1",  "Line": 29,  "Tier": "Literal",  "Rule": "ps.invoke-webrequest"}

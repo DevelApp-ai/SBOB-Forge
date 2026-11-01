@@ -1,0 +1,50 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "32cb5569230b50ba259cca4fdba72eb6dba56619dcf027c663843a74790b0b95",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 4,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "open path is an interpolated string, not a constant literal",
+      "File": "sut/bash/status.sh",
+      "Line": 20,
+      "TestId": "sut:status.append_dynamic_log",
+      "Rule": "sh.redir-append"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/bash/status.bats",
+      "Line": 19,
+      "TestId": "tests/bash/status.bats::legacy path"
+    },
+    {
+      "Description": "test helper (not an entry method): .skip",
+      "File": "tests/bash/status.bats",
+      "Line": 20,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): .rm",
+      "File": "tests/bash/status.bats",
+      "Line": 21,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/bash/status.sh",
+      "Line": 24,
+      "TestId": "sut:status.clean_cache",
+      "Rule": ""
+    }
+  ],
+  "LexicalParsers": [
+    "bash"
+  ]
+}
