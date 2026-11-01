@@ -1253,7 +1253,7 @@ public static class PhpCatalogLowering
         CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
 }
 
-/// <summary>PowerShell lowering entry point (TDS 7.3, M4; lexical parser, reduced confidence).</summary>
+/// <summary>PowerShell lowering entry point (TDS 7.3, M4; structural parser, TDS 5.4 Phase B).</summary>
 public static class PowerShellCatalogLowering
 {
     public static LanguageCatalog Catalog { get; } = PowerShellCatalog.LoadDefault();
@@ -1264,7 +1264,7 @@ public static class PowerShellCatalogLowering
         CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
 }
 
-/// <summary>Bash lowering entry point (TDS 7.3, M4; lexical parser, reduced confidence).</summary>
+/// <summary>Bash lowering entry point (TDS 7.3, M4; structural parser, TDS 5.4 Phase B).</summary>
 public static class BashCatalogLowering
 {
     public static LanguageCatalog Catalog { get; } = BashCatalog.LoadDefault();

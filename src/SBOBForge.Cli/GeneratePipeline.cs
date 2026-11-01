@@ -56,10 +56,11 @@ public sealed class GenerationResult
 /// M3: .go → go119 parser, .js/.ts → typescript parser (Jest/Vitest adapters,
 /// js catalog).
 /// M4: .php → structural php parser (PHPUnit adapter, php catalog);
-/// .ps1/.psm1/.psd1 → powershell lexical parser (Pester adapter,
-/// powershell catalog); .sh/.bash/.bats → bash lexical parser (Bats adapter,
-/// bash catalog). Lexical backends mark every downstream artifact
-/// `parser: lexical` (TDS 5.4 Phase A) — reduced confidence tier.
+/// .ps1/.psm1/.psd1 → structural powershell parser (Pester adapter,
+/// powershell catalog); .sh/.bash/.bats → structural bash parser (Bats
+/// adapter, bash catalog). TDS 5.4 Phase B upgraded both backends from
+/// M4's fixed lexical scanners to structural statement scanners; the
+/// reduced-confidence `parser: lexical` markers were retired.
 /// M5: .c/.h → structural C17 parser, .cc/.cpp/.cxx/.hpp/.hh/.hxx →
 /// structural C++20 parser (GoogleTest/Catch2/Unity adapters, c/cpp
 /// catalogs). Socket-setup literals (sin_port/sin_addr) are hoisted onto
@@ -90,8 +91,8 @@ public static class GeneratePipeline
             grammarLock.VerifyFrozenEntry("go119", GoSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("typescript", TypeScriptSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("php", PhpSourceParser.Version, null);
-            grammarLock.VerifyFrozenEntry("powershell", PowerShellSourceParser.Version, null);
-            grammarLock.VerifyFrozenEntry("bash", BashSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("powershell", PowerShellSourceParser.Version, PowerShellSourceParser.GrammarSha256);
+            grammarLock.VerifyFrozenEntry("bash", BashSourceParser.Version, BashSourceParser.GrammarSha256);
             grammarLock.VerifyFrozenEntry("c17", C17SourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("cpp20", Cpp20SourceParser.Version, null);
             grammarLock.VerifyFrozenEntry(DotNetCatalog.LockEntryName,
@@ -120,7 +121,6 @@ public static class GeneratePipeline
         var testFiles = FileDiscovery.Enumerate(root, config.TestGlobs);
 
         var allowedParseError = new HashSet<string>(config.AllowParseError, StringComparer.Ordinal);
-        var analyzedLangs = new SortedSet<string>(StringComparer.Ordinal);
 
         var sutModels = new List<(CodeModel Model, SourceLang Lang)>();
         var testModels = new List<(CodeModel Model, IReadOnlyList<TestEntry> Entries, List<TestEntry> Skipped)>();
@@ -129,14 +129,12 @@ public static class GeneratePipeline
         foreach (var file in sutFiles)
         {
             var lang = LangOf(file);
-            analyzedLangs.Add(LangKey(lang));
             sutModels.Add((ParseOrQuarantine(ParserFor(lang), root, file, allowedParseError, parseErrors), lang));
         }
 
         foreach (var file in testFiles)
         {
             var lang = LangOf(file);
-            analyzedLangs.Add(LangKey(lang));
             var model = ParseOrQuarantine(ParserFor(lang), root, file, allowedParseError, parseErrors);
             var entries = RegistryFor(lang)(model);
             testModels.Add((model, entries.Where(e => e.Enabled).ToList(), entries.Where(e => !e.Enabled).ToList()));
@@ -308,8 +306,7 @@ public static class GeneratePipeline
             noise.OrderBy(n => n.File, StringComparer.Ordinal).ThenBy(n => n.Line).ThenBy(n => n.TestId, StringComparer.Ordinal).ToArray(),
             unrepresentable.OrderBy(u => u.File, StringComparer.Ordinal).ThenBy(u => u.Line).ThenBy(u => u.TestId, StringComparer.Ordinal).ToArray(),
             sutFiles.Count + testFiles.Count, testFiles.Count,
-            testModels.Sum(t => t.Entries.Count),
-            analyzedLangs.Where(l => l is "powershell" or "bash").ToArray());
+            testModels.Sum(t => t.Entries.Count));
 
         var ir = new BehaviorIr(
             package, execs, opens, egress, ingress, coverage,
@@ -395,9 +392,6 @@ public static class GeneratePipeline
         SourceLang.Cpp => "cpp20",
         _ => ""
     };
-
-    /// <summary>TDS 5.4 Phase A: PowerShell and Bash files are analyzed by fixed lexical scanners — reduced confidence, marked `parser: lexical` downstream.</summary>
-    internal static bool IsLexicalLang(SourceLang lang) => lang is SourceLang.PowerShell or SourceLang.Bash;
 
     internal static ICodeModelParser ParserFor(SourceLang lang) => lang switch
     {
@@ -508,8 +502,7 @@ public static class GeneratePipeline
             q.Primitive.ToString(), q.Reason, q.File, q.Line, q.TestId, q.CatalogRuleId)).ToArray(),
         ir.Coverage.Noise.Select(n => new NoiseRow(n.Description, n.File, n.Line, n.TestId)).ToArray(),
         ir.Coverage.Unrepresentable.Select(u => new CoverageRow(
-            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray(),
-        ir.Coverage.LexicalParserList.ToArray()), Json.Options) + "\n";
+            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options) + "\n";
 
     public static string RoslynVersion() =>
         typeof(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -530,6 +523,5 @@ public static class GeneratePipeline
         int TestEntries,
         CoverageRow[] Quarantined,
         NoiseRow[] Noise,
-        CoverageRow[] Unrepresentable,
-        string[] LexicalParsers);
+        CoverageRow[] Unrepresentable);
 }

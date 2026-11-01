@@ -7,11 +7,10 @@ using SBOBForge.Parsing;
 namespace SBOBForge.Adapters.Bash;
 
 /// <summary>
-/// Bats adapter (TDS 7.2, framework matrix row Bash; lexical parser, reduced
-/// confidence). The parser synthesizes one "sh.entry"-attributed method per
-/// `@test "title" { … }` block; a `skip` command in the block body disables
-/// the entry. Entries from lexical parsers are marked in every downstream
-/// artifact (TDS 5.4).
+/// Bats adapter (TDS 7.2, framework matrix row Bash; structural parser,
+/// TDS 5.4 Phase B). The parser synthesizes one "sh.entry"-attributed method
+/// per `@test "title" { … }` block; a `skip` command in the block body
+/// disables the entry.
 /// </summary>
 public sealed class BatsAdapter : ITestFrameworkAdapter
 {

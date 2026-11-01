@@ -92,8 +92,7 @@ public static class Program
                           $"sbobforge-powershell {Parsing.PowerShellSourceParser.Version}, " +
                           $"sbobforge-bash {Parsing.BashSourceParser.Version}, " +
                           $"sbobforge-c17 {Parsing.C17SourceParser.Version}, " +
-                          $"sbobforge-cpp20 {Parsing.Cpp20SourceParser.Version} (pinned via lock; " +
-                          "powershell/bash are lexical — TDS 5.4)");
+                          $"sbobforge-cpp20 {Parsing.Cpp20SourceParser.Version} (pinned via lock)");
         Console.WriteLine($"  source-validation substrate: DevelApp.Minotaur {MinotaurSourceValidator.InstalledVersion()} (pinned via lock)");
         Console.WriteLine($"  catalogs: dotnet v{DotNetCatalogLowering.Catalog.Version}, " +
                           $"java v{JavaCatalogLowering.Catalog.Version}, " +
@@ -164,12 +163,12 @@ public static class Program
         lockModel.Grammars["powershell"] = new GrammarLockEntry
         {
             Version = Parsing.PowerShellSourceParser.Version,
-            Sha256 = ""
+            Sha256 = Parsing.PowerShellSourceParser.GrammarSha256
         };
         lockModel.Grammars["bash"] = new GrammarLockEntry
         {
             Version = Parsing.BashSourceParser.Version,
-            Sha256 = ""
+            Sha256 = Parsing.BashSourceParser.GrammarSha256
         };
         lockModel.Grammars["c17"] = new GrammarLockEntry
         {
