@@ -77,3 +77,66 @@ jobs:
               issue_number: context.issue.number,
               body: 'CI failure context (run ' + context.runId + '):\n\n' + body
             });
+
+  # TDS 10.1.2 / 14.5: transpiler replay lane. Every committed fixture golden
+  # is converted to the Software-Bill-of-Behavior registry dialect
+  # (sbobforge convert, TDS 10.4) and must pass that repo's sbobctl validate
+  # (parse + schema + lint) at a pinned SHA. A lint rejection routes here,
+  # not downstream. Node >= 22 per org decision #20; the pinned SHA makes
+  # spec/tool changes explicit PRs (TDS 16 risk table).
+  transpiler-replay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      SBOB_REPO_SHA: 181783453d3e9bddc30faba5f0b9ad96a571b2d9
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Checkout Software-Bill-of-Behavior at the pinned SHA
+        uses: actions/checkout@v5
+        with:
+          repository: DevelApp-ai/Software-Bill-of-Behavior
+          ref: ${{ env.SBOB_REPO_SHA }}
+          path: sbob-repo
+
+      - name: Restore
+        shell: bash
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+        run: |
+          set -o pipefail
+          dotnet restore 2>&1 | tee replay-restore.log
+
+      - name: Build (warnings as errors)
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build --no-restore -warnaserror 2>&1 | tee replay-build.log
+
+      - name: Convert + sbobctl validate every fixture golden
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sbob-replay
+          fail=0
+          for golden in examples/*/sbob/*.sbob.yaml; do
+            name="$(basename "$golden" .sbob.yaml)"
+            out="/tmp/sbob-replay/$name.yaml"
+            dotnet run --no-build --project src/SBOBForge.Cli -- convert "$golden" "$out"
+            echo "::group::replay: sbobctl validate $name"
+            if ! node sbob-repo/src/cli.ts validate --sbob "$out"; then
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail

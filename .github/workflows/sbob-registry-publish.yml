@@ -1,0 +1,280 @@
+name: sbob-registry-publish
+
+# M6 pipeline (TDS 10.2, 10.3, 12): cosign signing + registry publish for a
+# package-bound SBoB. Called from a product repo's release/main workflow:
+#
+#   jobs:
+#     sbob-publish:
+#       uses: DevelApp-ai/SBOB-Forge/.github/workflows/sbob-registry-publish.yml@<pinned-ref>
+#       with:
+#         package-purl: pkg:nuget/develapp.minotaur@1.5.25
+#         sbob-file: sbob/develapp-minotaur.linux.sbob.yaml
+#         registry-dir: sbobs/nuget
+#       permissions:
+#         contents: read
+#         id-token: write        # cosign keyless OIDC (org decision #14)
+#       secrets:
+#         SBOB_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+#
+# Stages:
+#   1. drift gate — sbobforge generate --check --frozen (org decision #26):
+#      a drifted profile is never signed or published; fix by regenerating.
+#   2. cosign keyless (OIDC) signing of the SBoB + provenance sidecar with the
+#      repo workflow identity (org decision #14): <file>.sig + <file>.bundle,
+#      the artifact names sbobctl's CosignVerifier expects.
+#   3. dialect conversion to the registry dialect (TDS 10.4).
+#   4. sbobctl validate + diff vs the previous released registry file at the
+#      pinned Software-Bill-of-Behavior SHA — the sbob-diff-gate ladder
+#      (fail-on mandatory); the verdict routes into the registry PR.
+#   5. registry PR adding/updating sbobs/<dir>/<name>.yaml (+ .sig/.bundle)
+#      in DevelApp-ai/Software-Bill-of-Behavior (squash-merged, org #28).
+#      The pipeline opens the PR; it never merges it.
+#
+# The SBOB_REGISTRY_TOKEN org secret needs contents write on the registry repo
+# (cross-repo PR).
+
+on:
+  workflow_call:
+    inputs:
+      package-purl:
+        description: 'Version-pinned package purl the profile is bound to (must equal spec.imageID)'
+        required: true
+        type: string
+      sbob-file:
+        description: 'Committed kubescape-dialect profile path (relative to the product repo root)'
+        required: true
+        type: string
+      provenance-file:
+        description: 'Provenance sidecar (JSONL) path; default derived from the sbob-file name'
+        required: false
+        type: string
+      registry-dir:
+        description: 'Registry lane directory: sbobs/nuget or sbobs/choco'
+        required: false
+        default: 'sbobs/nuget'
+        type: string
+      registry-name:
+        description: 'Registry file base name; default derived from the sbob-file basename'
+        required: false
+        type: string
+      fail-on:
+        description: 'Diff-gate verdict at which publishing stops: none | advisory | mandatory'
+        required: false
+        default: 'mandatory'
+        type: string
+      sbob-forge-ref:
+        description: 'SBOB-Forge ref to build the sbobforge CLI from; default: the ref this workflow is called with'
+        required: false
+        default: ''
+        type: string
+    secrets:
+      SBOB_REGISTRY_TOKEN:
+        description: 'Token with contents:write on DevelApp-ai/Software-Bill-of-Behavior (opens the registry PR)'
+        required: true
+
+env:
+  SBOB_REPO: DevelApp-ai/Software-Bill-of-Behavior
+  # Pinned Software-Bill-of-Behavior SHA — same pin as the ci.yml replay lane;
+  # spec/tool changes are explicit PRs (TDS 16 risk table).
+  SBOB_REPO_SHA: 181783453d3e9bddc30faba5f0b9ad96a571b2d9
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # cosign keyless OIDC (org decision #14)
+    steps:
+      # The default checkout in a reusable workflow is the CALLING (product) repo.
+      - uses: actions/checkout@v5
+
+      - name: Resolve the SBOB-Forge ref to build from
+        id: forge-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${{ inputs.sbob-forge-ref }}"
+          if [ -z "$ref" ]; then
+            # github.workflow_ref = <org>/<repo>/.github/workflows/<file>.yml@<ref>
+            ref="${GITHUB_WORKFLOW_REF##*@}"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout SBOB-Forge (generator)
+        uses: actions/checkout@v5
+        with:
+          repository: DevelApp-ai/SBOB-Forge
+          ref: ${{ steps.forge-ref.outputs.ref }}
+          path: sbobforge-repo
+
+      - name: Checkout Software-Bill-of-Behavior at the pinned SHA (transpiler + diff gate)
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.SBOB_REPO }}
+          ref: ${{ env.SBOB_REPO_SHA }}
+          path: sbob-repo
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Resolve derived paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          sbob_file="${{ inputs.sbob-file }}"
+          base="$(basename "$sbob_file" .sbob.yaml)"
+          name="${{ inputs.registry-name }}"
+          [ -n "$name" ] || name="$base"
+          prov="${{ inputs.provenance-file }}"
+          [ -n "$prov" ] || prov="$(dirname "$sbob_file")/$base.provenance.jsonl"
+          echo "sbob-file=$sbob_file" >> "$GITHUB_OUTPUT"
+          echo "provenance-file=$prov" >> "$GITHUB_OUTPUT"
+          echo "registry-name=$name" >> "$GITHUB_OUTPUT"
+          echo "registry-file=${{ inputs.registry-dir }}/$name.yaml" >> "$GITHUB_OUTPUT"
+
+      - name: Restore + build sbobforge
+        working-directory: sbobforge-repo
+        shell: bash
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          dotnet restore
+          dotnet build --no-restore -warnaserror
+
+      - name: Drift gate (never sign or publish a drifted profile)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
+            generate . --check --frozen
+          # The committed profile must be bound to the requested purl.
+          dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
+            validate "${{ steps.paths.outputs.sbob-file }}"
+          grep -q "imageID: ${{ inputs.package-purl }}" "${{ steps.paths.outputs.sbob-file }}" \
+            || { echo "spec.imageID does not match package-purl input '${{ inputs.package-purl }}'"; exit 2; }
+
+      - name: Sign SBoB + provenance (cosign keyless OIDC)
+        uses: sigstore/cosign-installer@v3
+
+      - name: cosign sign-blob (SBoB + provenance sidecar)
+        shell: bash
+        env:
+          SBOB_FILE: ${{ steps.paths.outputs.sbob-file }}
+          PROV_FILE: ${{ steps.paths.outputs.provenance-file }}
+        run: |
+          set -euo pipefail
+          for f in "$SBOB_FILE" "$PROV_FILE"; do
+            [ -f "$f" ] || { echo "missing signing input: $f"; exit 2; }
+            cosign sign-blob --yes --output-signature "$f.sig" --bundle "$f.bundle" "$f"
+            cosign verify-blob \
+              --bundle "$f.bundle" \
+              --certificate-identity-regexp '^https://github.com/DevelApp-ai/' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$f"
+          done
+
+      - name: Convert to the registry dialect (TDS 10.4)
+        shell: bash
+        env:
+          SBOB_FILE: ${{ steps.paths.outputs.sbob-file }}
+          REGISTRY_FILE: ${{ steps.paths.outputs.registry-file }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$REGISTRY_FILE")"
+          dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
+            convert "$SBOB_FILE" "$REGISTRY_FILE"
+          # The registry copy carries the same signature artifacts so cosign
+          # verify-blob works straight from the registry repo.
+          cp "$SBOB_FILE.sig" "$REGISTRY_FILE.sig"
+          cp "$SBOB_FILE.bundle" "$REGISTRY_FILE.bundle"
+
+      - name: sbobctl validate + diff gate vs previous release
+        shell: bash
+        env:
+          GH_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+          REGISTRY_FILE: ${{ steps.paths.outputs.registry-file }}
+          REGISTRY_NAME: ${{ steps.paths.outputs.registry-name }}
+          FAIL_ON: ${{ inputs.fail-on }}
+        run: |
+          set -euo pipefail
+          node sbob-repo/src/cli.ts validate --sbob "$REGISTRY_FILE"
+
+          old="/tmp/previous-$REGISTRY_NAME.yaml"
+          if gh api "repos/${{ env.SBOB_REPO }}/contents/$REGISTRY_FILE?ref=main" \
+               --header "Authorization: Bearer $GH_REGISTRY_TOKEN" \
+               --jq .content | base64 -d > "$old" 2>/dev/null && [ -s "$old" ]; then
+            echo "previous release found; running the sbob-diff-gate ladder (fail-on: $FAIL_ON)"
+            node sbob-repo/src/cli.ts diff --old "$old" --new "$REGISTRY_FILE" --fail-on "$FAIL_ON"
+          else
+            echo "no previous release for $REGISTRY_NAME — diff gate trivially clean (first registry entry)"
+          fi
+
+      - name: Write the registry PR body
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/pr-body.md <<'EOF'
+          Published by the SBOB-Forge sbob-registry-publish pipeline (TDS 10.2/10.3).
+
+          - **Package:** `PACKAGE_PURL`
+          - **Registry file:** `REGISTRY_FILE_PATH` (+ `.sig` / `.bundle` cosign artifacts)
+          - **Generated by:** sbobforge, drift-gated `--check --frozen` before signing
+          - **Diff gate:** the previous released profile was compared with the sbob-diff-gate ladder (fail-on: FAIL_ON) at pinned Software-Bill-of-Behavior SHA `PINNED_SHA`
+
+          **Verify the signature (cosign keyless, org decision #14):**
+
+          ```bash
+          cosign verify-blob \
+            --bundle REGISTRY_FILE_PATH.bundle \
+            --certificate-identity-regexp '^https://github.com/DevelApp-ai/' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            REGISTRY_FILE_PATH
+          ```
+          EOF
+          sed -i \
+            -e "s|PACKAGE_PURL|${{ inputs.package-purl }}|g" \
+            -e "s|REGISTRY_FILE_PATH|${{ steps.paths.outputs.registry-file }}|g" \
+            -e "s|FAIL_ON|${{ inputs.fail-on }}|g" \
+            -e "s|PINNED_SHA|${{ env.SBOB_REPO_SHA }}|g" \
+            /tmp/pr-body.md
+
+      - name: Open the registry PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+          PURL: ${{ inputs.package-purl }}
+        run: |
+          set -euo pipefail
+          reg_name="${{ steps.paths.outputs.registry-name }}"
+          registry_file="${{ steps.paths.outputs.registry-file }}"
+          version="${PURL##*@}"
+          branch="sbob-registry-$reg_name-$(git log -1 --format=%h)"
+
+          gh api -X DELETE "repos/${{ env.SBOB_REPO }}/git/refs/heads/$branch" >/dev/null 2>&1 || true
+          sha="$(gh api "repos/${{ env.SBOB_REPO }}/git/ref/heads/main" --jq .object.sha)"
+          gh api -X POST "repos/${{ env.SBOB_REPO }}/git/refs" \
+            -f ref="refs/heads/$branch" -f sha="$sha" >/dev/null
+
+          b64() { base64 -w0 "$1"; }
+          put() {
+            gh api -X PUT "repos/${{ env.SBOB_REPO }}/contents/$1" \
+              -f message="$2" -f content="$(b64 "$3")" -f branch="$branch" >/dev/null
+          }
+          put "$registry_file" "sbob: $PURL" "$registry_file"
+          put "$registry_file.sig" "sbob: cosign signature for $PURL" "$registry_file.sig"
+          put "$registry_file.bundle" "sbob: cosign keyless bundle for $PURL" "$registry_file.bundle"
+
+          gh pr create \
+            --repo "${{ env.SBOB_REPO }}" \
+            --base main \
+            --head "$branch" \
+            --title "sbob(${{ inputs.registry-dir }}): $reg_name $version" \
+            --body-file /tmp/pr-body.md
+          echo "registry PR opened"
