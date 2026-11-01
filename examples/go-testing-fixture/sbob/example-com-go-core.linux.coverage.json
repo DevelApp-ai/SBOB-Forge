@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "53c1b6f7f775d9f20a6879555bde345b98b1d1061d4d6e98089a54f662d7b79e",
+  "BehaviorHash": "783e15feef14207e634750c4112576072d704d66f487e6bd32ea1953f80d7434",
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 3,
@@ -43,6 +43,5 @@
       "TestId": "sut:core.CleanCache",
       "Rule": ""
     }
-  ],
-  "LexicalParsers": []
+  ]
 }

@@ -7,8 +7,8 @@ metadata:
     kubescape.io/managed-by: User
     develapp.io/binding: package-purl
     develapp.io/generator: sbobforge@0.1.0
-    develapp.io/grammar-lock-sha256: a1aa645984c43b48b5f751727c61d728f60be5375490d77cea2850d714b09293
-    develapp.io/behavior-hash: fda0db766102fe3c4faa856d8f67d578da22762cd928acf566c449bc69403796
+    develapp.io/grammar-lock-sha256: 8e5651bf16ecf80ab37c143263072547922c294ad593ca17fe68cdef116ffe57
+    develapp.io/behavior-hash: 8c47e8dca85342087fcda8064b3bb5a5483409add27809f2a8ce4df6a2cd681d
 spec:
   architectures: [amd64]
   imageID: pkg:npm/ts-status@1.0.0
