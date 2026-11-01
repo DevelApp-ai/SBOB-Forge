@@ -71,3 +71,19 @@ public static class PythonCatalog
     public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
     public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
 }
+
+public static class GoCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.go-catalog.json";
+    public const string LockEntryName = "go-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}
+
+public static class JsCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.js-catalog.json";
+    public const string LockEntryName = "js-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}

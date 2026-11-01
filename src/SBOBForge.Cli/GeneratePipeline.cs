@@ -6,8 +6,10 @@ using System.Text;
 using System.Text.Json;
 using SBOBForge.Adapters;
 using SBOBForge.Adapters.DotNet;
+using SBOBForge.Adapters.Go;
 using SBOBForge.Adapters.Java;
 using SBOBForge.Adapters.Python;
+using SBOBForge.Adapters.TypeScript;
 using SBOBForge.Catalog;
 using SBOBForge.Core;
 using SBOBForge.Core.Config;
@@ -47,10 +49,12 @@ public sealed class GenerationResult
 /// Every stage is content-deterministic (TDS 9): same inputs, same bytes.
 /// M2: per-language dispatch (.cs → Roslyn/.NET, .java → java17 parser,
 /// .py → python311 parser).
+/// M3: .go → go119 parser, .js/.ts → typescript parser (Jest/Vitest adapters,
+/// js catalog).
 /// </summary>
 public static class GeneratePipeline
 {
-    internal enum SourceLang { CSharp, Java, Python }
+    internal enum SourceLang { CSharp, Java, Python, Go, TypeScript }
 
     public static GenerationResult Run(GenerationOptions options)
     {
@@ -70,12 +74,18 @@ public static class GeneratePipeline
             grammarLock.VerifyFrozenEntry("csharp", RoslynVersion(), null);
             grammarLock.VerifyFrozenEntry("java17", JavaSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("python311", PythonSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("go119", GoSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("typescript", TypeScriptSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry(DotNetCatalog.LockEntryName,
                 DotNetCatalogLowering.Catalog.Version.ToString(), DotNetCatalog.ComputeDefaultHash());
             grammarLock.VerifyFrozenEntry(JavaCatalog.LockEntryName,
                 JavaCatalogLowering.Catalog.Version.ToString(), JavaCatalog.ComputeDefaultHash());
             grammarLock.VerifyFrozenEntry(PythonCatalog.LockEntryName,
                 PythonCatalogLowering.Catalog.Version.ToString(), PythonCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(GoCatalog.LockEntryName,
+                GoCatalogLowering.Catalog.Version.ToString(), GoCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(JsCatalog.LockEntryName,
+                JsCatalogLowering.Catalog.Version.ToString(), JsCatalog.ComputeDefaultHash());
         }
 
         var sutFiles = FileDiscovery.Enumerate(root, config.SutGlobs);
@@ -310,15 +320,26 @@ public static class GeneratePipeline
         };
     }
 
-    internal static SourceLang LangOf(string file) =>
-        file.EndsWith(".java", StringComparison.OrdinalIgnoreCase) ? SourceLang.Java
-        : file.EndsWith(".py", StringComparison.OrdinalIgnoreCase) ? SourceLang.Python
-        : SourceLang.CSharp;
+    internal static SourceLang LangOf(string file)
+    {
+        if (file.EndsWith(".java", StringComparison.OrdinalIgnoreCase)) return SourceLang.Java;
+        if (file.EndsWith(".py", StringComparison.OrdinalIgnoreCase)) return SourceLang.Python;
+        if (file.EndsWith(".go", StringComparison.OrdinalIgnoreCase)) return SourceLang.Go;
+        if (file.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".mjs", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".cjs", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".jsx", StringComparison.OrdinalIgnoreCase)) return SourceLang.TypeScript;
+        return SourceLang.CSharp;
+    }
 
     internal static ICodeModelParser ParserFor(SourceLang lang) => lang switch
     {
         SourceLang.Java => new JavaSourceParser(),
         SourceLang.Python => new PythonSourceParser(),
+        SourceLang.Go => new GoSourceParser(),
+        SourceLang.TypeScript => new TypeScriptSourceParser(),
         _ => new RoslynCSharpParser()
     };
 
@@ -326,6 +347,8 @@ public static class GeneratePipeline
     {
         SourceLang.Java => new JavaTestFrameworkRegistry().ExtractEntries,
         SourceLang.Python => new PythonTestFrameworkRegistry().ExtractEntries,
+        SourceLang.Go => new GoTestFrameworkRegistry().ExtractEntries,
+        SourceLang.TypeScript => new JsTestFrameworkRegistry().ExtractEntries,
         _ => new TestFrameworkRegistry().ExtractEntries
     };
 
@@ -333,6 +356,8 @@ public static class GeneratePipeline
     {
         SourceLang.Java => JavaCatalogLowering.Lower(inv, substitute),
         SourceLang.Python => PythonCatalogLowering.Lower(inv, substitute),
+        SourceLang.Go => GoCatalogLowering.Lower(inv, substitute),
+        SourceLang.TypeScript => JsCatalogLowering.Lower(inv, substitute),
         _ => DotNetCatalogLowering.Lower(inv, substitute)
     };
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using SBOBForge.Core.Model;
 using SBOBForge.Parsing;
 
@@ -61,8 +62,21 @@ public static class CatalogLowering
         foreach (var r in rules)
         {
             if (r.Method is null || !string.Equals(r.Method, invocation.Method, StringComparison.Ordinal)) continue;
-            if (r.Receiver is not null && !string.Equals(r.Receiver, invocation.Receiver, StringComparison.Ordinal))
-                continue;
+            // Receiver semantics (TDS 7.3): a rule with receiver null matches any
+            // receiver; an empty-string receiver ("") matches only bare calls
+            // (destructured imports / globals — JS exec/fetch; keeps RegExp.exec
+            // and lodash-style false matches out); a named receiver matches exactly.
+            if (r.Receiver is not null)
+            {
+                if (r.Receiver.Length == 0)
+                {
+                    if (invocation.Receiver is not null) continue;
+                }
+                else if (!string.Equals(r.Receiver, invocation.Receiver, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+            }
             rule = r;
             break;
         }
@@ -81,8 +95,12 @@ public static class CatalogLowering
             "subprocessExec" => LowerSubprocessExec(rule, invocation, substitute),
             "egress" => LowerEgress(rule, invocation, substitute),
             "egressHostPort" => LowerEgressHostPort(rule, invocation, substitute),
+            "egressNetDial" => LowerEgressNetDial(rule, invocation, substitute),
             "ingress" => LowerIngress(rule, invocation, substitute),
             "ingressHostPort" => LowerIngressHostPort(rule, invocation, substitute),
+            "ingressNetListen" => LowerIngressNetListen(rule, invocation, substitute),
+            "openGoFlags" => LowerOpenGoFlags(rule, invocation, substitute),
+            "execProgramArgs" => LowerExecProgramArgs(rule, invocation, substitute),
             _ => throw new InvalidOperationException($"Unknown catalog rule kind '{rule.Kind}' ({rule.Id})")
         };
     }
@@ -425,6 +443,154 @@ public static class CatalogLowering
             host?.ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
     }
 
+    // ---- network (Go addr forms) -------------------------------------------
+
+    /// <summary>net.Dial(network, addr): addr is a literal "host:port" (TDS 7.2 Go row). Network "udp"/"udp4"/"udp6" → UDP.</summary>
+    private static LoweredInvocation LowerEgressNetDial(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var addr = Arg(inv, 1);
+        if (addr is null)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv, "dial address argument missing");
+        var resolved = Resolve(addr, substitute);
+        if (!resolved.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                $"dial address is {KindName(resolved)}, not a constant literal");
+        if (!TryHostColonPort(resolved.Value, out var host, out var port))
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                $"dial address '{resolved.Value}' is not a literal host:port");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            host, port, NetworkOf(inv, substitute), NetDirection.Egress, null, null);
+    }
+
+    /// <summary>net.Listen(network, addr): addr is a literal "host:port" or ":port" (TDS 7.2 Go row).</summary>
+    private static LoweredInvocation LowerIngressNetListen(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var addr = Arg(inv, 1);
+        if (addr is null)
+            return Quarantined(rule, BehaviorPrimitive.Listen, inv, "listen address argument missing");
+        var resolved = Resolve(addr, substitute);
+        if (!resolved.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Listen, inv,
+                $"listen address is {KindName(resolved)}, not a constant literal");
+        if (!TryHostColonPort(resolved.Value, out _, out var port))
+            return Quarantined(rule, BehaviorPrimitive.Listen, inv,
+                $"listen address '{resolved.Value}' is not a literal host:port");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Listen,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            "", port, NetworkOf(inv, substitute), NetDirection.Ingress, null, null);
+    }
+
+    /// <summary>Splits "host:port" / ":port"; IPv6 literals ([::1]:8080) are not resolvable in v1.</summary>
+    private static bool TryHostColonPort(string value, out string host, out int port)
+    {
+        host = "";
+        port = 0;
+        int colon = value.LastIndexOf(':');
+        if (colon < 0 || colon + 1 >= value.Length) return false;
+        host = value[..colon].Trim();
+        if (!int.TryParse(value[(colon + 1)..].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port))
+            return false;
+        return port is > 0 and <= 65535;
+    }
+
+    /// <summary>First literal arg "udp"/"udp4"/"udp6" → UDP; anything else (incl. missing) → TCP.</summary>
+    private static string NetworkOf(InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var first = Arg(inv, 0);
+        if (first is null) return ProtocolTcp;
+        var net = Resolve(first, substitute);
+        return net.IsLiteral && net.Value.StartsWith("udp", StringComparison.Ordinal) ? "UDP" : ProtocolTcp;
+    }
+
+    // ---- Go open flags ------------------------------------------------------
+
+    /// <summary>os.OpenFile(name, os.O_WRONLY|os.O_CREATE|…, perm): flag-mask identifier (Go parser pre-maps it) → spec flag tokens in canonical order (TDS 7.2 open table).</summary>
+    private static LoweredInvocation LowerOpenGoFlags(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var path = Arg(inv, 0);
+        if (path is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "open path argument missing");
+        var resolvedPath = Resolve(path, substitute);
+        if (!resolvedPath.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"open path is {KindName(resolvedPath)}, not a constant literal");
+
+        var flagsArg = Arg(inv, 1);
+        if (flagsArg is null || flagsArg.Kind != ArgKind.Identifier)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                flagsArg is null
+                    ? "open flag mask argument missing"
+                    : $"open flag mask is {KindName(flagsArg)}, not a constant os.O_* combination");
+
+        var tokens = flagsArg.Value.Split('|', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0) return Quarantined(rule, BehaviorPrimitive.Open, inv, "open flag mask is empty");
+
+        var flags = new List<string>();
+        foreach (var token in tokens)
+        {
+            switch (token)
+            {
+                case "O_RDONLY": flags.Add("O_RDONLY"); break;
+                case "O_WRONLY" or "O_WR_ONLY": flags.Add("O_WRONLY"); break;
+                case "O_RDWR": flags.Add("O_RDWR"); break;
+                case "O_CREATE" or "O_CREAT": flags.Add("O_CREAT"); break;
+                case "O_TRUNC": flags.Add("O_TRUNC"); break;
+                case "O_APPEND": flags.Add("O_APPEND"); break;
+                default:
+                    return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                        $"open flag constant 'os.{token}' is not a resolvable spec open(2) flag");
+            }
+        }
+        // canonical order (TDS 8.1: fixed, deterministic)
+        var ordered = new[] { "O_RDONLY", "O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND" }
+            .Where(flags.Contains)
+            .ToArray();
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
+            resolvedPath.Value, ordered, Array.Empty<string>(), true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    // ---- exec (JS child_process) -------------------------------------------
+
+    /// <summary>spawn/execFile(program, [args][, options][, cb]): arg0 program literal; arg1 literal list → exact args; dynamic/missing → argv0-anchored args wildcard (TDS 5.2).</summary>
+    private static LoweredInvocation LowerExecProgramArgs(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var program = Arg(inv, 0);
+        if (program is null)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec program argument missing");
+        var resolvedProgram = Resolve(program, substitute);
+        if (!resolvedProgram.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv,
+                $"exec program is {KindName(resolvedProgram)}, not a constant literal");
+
+        var argsArg = Arg(inv, 1);
+        if (argsArg is null)
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedProgram.Value, Array.Empty<string>(), Array.Empty<string>(), true,
+                null, null, "", NetDirection.Egress, null, null);
+        var resolvedArgs = Resolve(argsArg, substitute);
+        if (resolvedArgs.Kind == ArgKind.List)
+        {
+            var argv = resolvedArgs.ListElements().ToArray();
+            if (argv.Length == 0)
+                return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec argv list is empty");
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedProgram.Value, Array.Empty<string>(), argv, true,
+                null, null, "", NetDirection.Egress, null, null);
+        }
+        // dynamic args: argv0-anchoring (TDS 5.2) — program name knowable, args are not
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+            resolvedProgram.Value, Array.Empty<string>(), Array.Empty<string>(), false,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
     private static LoweredInvocation LowerIngress(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
     {
         // new ServerSocket(port[, ...]): the port is the last literal numeric argument.
@@ -510,6 +676,28 @@ public static class JavaCatalogLowering
 public static class PythonCatalogLowering
 {
     public static LanguageCatalog Catalog { get; } = PythonCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>Go lowering entry point (TDS 7.3).</summary>
+public static class GoCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = GoCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>JS/TS lowering entry point (TDS 7.3).</summary>
+public static class JsCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = JsCatalog.LoadDefault();
 
     public static LoweredInvocation? Lower(
         InvocationDecl invocation,
