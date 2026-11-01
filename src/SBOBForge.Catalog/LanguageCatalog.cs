@@ -111,3 +111,19 @@ public static class BashCatalog
     public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
     public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
 }
+
+public static class CCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.c-catalog.json";
+    public const string LockEntryName = "c-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}
+
+public static class CppCatalog
+{
+    public const string ManifestName = "SBOBForge.Catalog.cpp-catalog.json";
+    public const string LockEntryName = "cpp-catalog";
+    public static LanguageCatalog LoadDefault() => LanguageCatalog.Load(ManifestName);
+    public static string ComputeDefaultHash() => LanguageCatalog.ComputeHash(ManifestName);
+}

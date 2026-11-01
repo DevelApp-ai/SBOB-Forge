@@ -90,7 +90,9 @@ public static class Program
                           $"sbobforge-typescript {Parsing.TypeScriptSourceParser.Version}, " +
                           $"sbobforge-php {Parsing.PhpSourceParser.Version}, " +
                           $"sbobforge-powershell {Parsing.PowerShellSourceParser.Version}, " +
-                          $"sbobforge-bash {Parsing.BashSourceParser.Version} (pinned via lock; " +
+                          $"sbobforge-bash {Parsing.BashSourceParser.Version}, " +
+                          $"sbobforge-c17 {Parsing.C17SourceParser.Version}, " +
+                          $"sbobforge-cpp20 {Parsing.Cpp20SourceParser.Version} (pinned via lock; " +
                           "powershell/bash are lexical — TDS 5.4)");
         Console.WriteLine($"  source-validation substrate: DevelApp.Minotaur {MinotaurSourceValidator.InstalledVersion()} (pinned via lock)");
         Console.WriteLine($"  catalogs: dotnet v{DotNetCatalogLowering.Catalog.Version}, " +
@@ -100,7 +102,9 @@ public static class Program
                           $"js v{JsCatalogLowering.Catalog.Version}, " +
                           $"php v{PhpCatalogLowering.Catalog.Version}, " +
                           $"powershell v{PowerShellCatalogLowering.Catalog.Version}, " +
-                          $"bash v{BashCatalogLowering.Catalog.Version}");
+                          $"bash v{BashCatalogLowering.Catalog.Version}, " +
+                          $"c v{CCatalogLowering.Catalog.Version}, " +
+                          $"cpp v{CppCatalogLowering.Catalog.Version}");
         return 0;
     }
 
@@ -167,6 +171,16 @@ public static class Program
             Version = Parsing.BashSourceParser.Version,
             Sha256 = ""
         };
+        lockModel.Grammars["c17"] = new GrammarLockEntry
+        {
+            Version = Parsing.C17SourceParser.Version,
+            Sha256 = ""
+        };
+        lockModel.Grammars["cpp20"] = new GrammarLockEntry
+        {
+            Version = Parsing.Cpp20SourceParser.Version,
+            Sha256 = ""
+        };
         lockModel.Grammars[DotNetCatalog.LockEntryName] = new GrammarLockEntry
         {
             Version = DotNetCatalogLowering.Catalog.Version.ToString(),
@@ -207,6 +221,16 @@ public static class Program
             Version = BashCatalogLowering.Catalog.Version.ToString(),
             Sha256 = BashCatalog.ComputeDefaultHash()
         };
+        lockModel.Grammars[CCatalog.LockEntryName] = new GrammarLockEntry
+        {
+            Version = CCatalogLowering.Catalog.Version.ToString(),
+            Sha256 = CCatalog.ComputeDefaultHash()
+        };
+        lockModel.Grammars[CppCatalog.LockEntryName] = new GrammarLockEntry
+        {
+            Version = CppCatalogLowering.Catalog.Version.ToString(),
+            Sha256 = CppCatalog.ComputeDefaultHash()
+        };
         lockModel.Save(lockPath);
         Console.WriteLine($"{(update ? "updated" : "created")} {lockPath}");
         Console.WriteLine("  minotaur " + lockModel.Minotaur.Version);
@@ -216,8 +240,10 @@ public static class Program
                           ", go119 " + lockModel.Grammars["go119"].Version +
                           ", typescript " + lockModel.Grammars["typescript"].Version +
                           ", php " + lockModel.Grammars["php"].Version +
-                          ", powershell " + lockModel.Grammars["powershell"].Version +
-                          ", bash " + lockModel.Grammars["bash"].Version);
+                          $", powershell " + lockModel.Grammars["powershell"].Version +
+                          ", bash " + lockModel.Grammars["bash"].Version +
+                          ", c17 " + lockModel.Grammars["c17"].Version +
+                          ", cpp20 " + lockModel.Grammars["cpp20"].Version);
         Console.WriteLine("  dotnet-catalog v" + DotNetCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[DotNetCatalog.LockEntryName].Sha256);
         Console.WriteLine("  java-catalog v" + JavaCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[JavaCatalog.LockEntryName].Sha256);
         Console.WriteLine("  python-catalog v" + PythonCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[PythonCatalog.LockEntryName].Sha256);
@@ -226,6 +252,8 @@ public static class Program
         Console.WriteLine("  php-catalog v" + PhpCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[PhpCatalog.LockEntryName].Sha256);
         Console.WriteLine("  powershell-catalog v" + PowerShellCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[PowerShellCatalog.LockEntryName].Sha256);
         Console.WriteLine("  bash-catalog v" + BashCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[BashCatalog.LockEntryName].Sha256);
+        Console.WriteLine("  c-catalog v" + CCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[CCatalog.LockEntryName].Sha256);
+        Console.WriteLine("  cpp-catalog v" + CppCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[CppCatalog.LockEntryName].Sha256);
         Console.WriteLine("  hash: " + lockModel.ComputeLockHash());
         Console.WriteLine("  review lock changes like a dependency bump (TDS 5.3)");
         return 0;
@@ -255,6 +283,8 @@ public static class Program
                     ".php" => new Parsing.PhpSourceParser(),
                     ".ps1" or ".psm1" or ".psd1" => new Parsing.PowerShellSourceParser(),
                     ".sh" or ".bash" or ".bats" => new Parsing.BashSourceParser(),
+                    ".c" or ".h" => new Parsing.C17SourceParser(),
+                    ".cc" or ".cpp" or ".cxx" or ".hpp" or ".hh" or ".hxx" => new Parsing.Cpp20SourceParser(),
                     _ => new RoslynCSharpParser()
                 };
                 parsers[key] = parser;
@@ -273,6 +303,8 @@ public static class Program
                 ".php" => new Adapters.Php.PhpTestFrameworkRegistry().ExtractEntries,
                 ".ps1" or ".psm1" or ".psd1" => new Adapters.PowerShell.PsTestFrameworkRegistry().ExtractEntries,
                 ".sh" or ".bash" or ".bats" => new Adapters.Bash.ShTestFrameworkRegistry().ExtractEntries,
+                ".c" or ".h" or ".cc" or ".cpp" or ".cxx" or ".hpp" or ".hh" or ".hxx" =>
+                    new Adapters.Cxx.CxxTestFrameworkRegistry().ExtractEntries,
                 _ => new Adapters.DotNet.TestFrameworkRegistry().ExtractEntries
             };
 

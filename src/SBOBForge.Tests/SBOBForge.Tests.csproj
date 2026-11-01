@@ -31,6 +31,7 @@
     <ProjectReference Include="..\SBOBForge.Adapters.Php\SBOBForge.Adapters.Php.csproj" />
     <ProjectReference Include="..\SBOBForge.Adapters.PowerShell\SBOBForge.Adapters.PowerShell.csproj" />
     <ProjectReference Include="..\SBOBForge.Adapters.Bash\SBOBForge.Adapters.Bash.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters.Cxx\SBOBForge.Adapters.Cxx.csproj" />
     <ProjectReference Include="..\SBOBForge.Catalog\SBOBForge.Catalog.csproj" />
   </ItemGroup>
 

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using SBOBForge.Adapters;
 using SBOBForge.Adapters.Bash;
+using SBOBForge.Adapters.Cxx;
 using SBOBForge.Adapters.DotNet;
 using SBOBForge.Adapters.Go;
 using SBOBForge.Adapters.Java;
@@ -59,10 +60,14 @@ public sealed class GenerationResult
 /// powershell catalog); .sh/.bash/.bats → bash lexical parser (Bats adapter,
 /// bash catalog). Lexical backends mark every downstream artifact
 /// `parser: lexical` (TDS 5.4 Phase A) — reduced confidence tier.
+/// M5: .c/.h → structural C17 parser, .cc/.cpp/.cxx/.hpp/.hh/.hxx →
+/// structural C++20 parser (GoogleTest/Catch2/Unity adapters, c/cpp
+/// catalogs). Socket-setup literals (sin_port/sin_addr) are hoisted onto
+/// connect/listen calls as synthetic named args (documented M5 decision).
 /// </summary>
 public static class GeneratePipeline
 {
-    internal enum SourceLang { CSharp, Java, Python, Go, TypeScript, Php, PowerShell, Bash }
+    internal enum SourceLang { CSharp, Java, Python, Go, TypeScript, Php, PowerShell, Bash, C, Cpp }
 
     public static GenerationResult Run(GenerationOptions options)
     {
@@ -87,6 +92,8 @@ public static class GeneratePipeline
             grammarLock.VerifyFrozenEntry("php", PhpSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("powershell", PowerShellSourceParser.Version, null);
             grammarLock.VerifyFrozenEntry("bash", BashSourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("c17", C17SourceParser.Version, null);
+            grammarLock.VerifyFrozenEntry("cpp20", Cpp20SourceParser.Version, null);
             grammarLock.VerifyFrozenEntry(DotNetCatalog.LockEntryName,
                 DotNetCatalogLowering.Catalog.Version.ToString(), DotNetCatalog.ComputeDefaultHash());
             grammarLock.VerifyFrozenEntry(JavaCatalog.LockEntryName,
@@ -103,6 +110,10 @@ public static class GeneratePipeline
                 PowerShellCatalogLowering.Catalog.Version.ToString(), PowerShellCatalog.ComputeDefaultHash());
             grammarLock.VerifyFrozenEntry(BashCatalog.LockEntryName,
                 BashCatalogLowering.Catalog.Version.ToString(), BashCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(CCatalog.LockEntryName,
+                CCatalogLowering.Catalog.Version.ToString(), CCatalog.ComputeDefaultHash());
+            grammarLock.VerifyFrozenEntry(CppCatalog.LockEntryName,
+                CppCatalogLowering.Catalog.Version.ToString(), CppCatalog.ComputeDefaultHash());
         }
 
         var sutFiles = FileDiscovery.Enumerate(root, config.SutGlobs);
@@ -359,6 +370,14 @@ public static class GeneratePipeline
         if (file.EndsWith(".sh", StringComparison.OrdinalIgnoreCase)
             || file.EndsWith(".bash", StringComparison.OrdinalIgnoreCase)
             || file.EndsWith(".bats", StringComparison.OrdinalIgnoreCase)) return SourceLang.Bash;
+        if (file.EndsWith(".c", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".h", StringComparison.OrdinalIgnoreCase)) return SourceLang.C;
+        if (file.EndsWith(".cc", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".cpp", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".cxx", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".hpp", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".hh", StringComparison.OrdinalIgnoreCase)
+            || file.EndsWith(".hxx", StringComparison.OrdinalIgnoreCase)) return SourceLang.Cpp;
         return SourceLang.CSharp;
     }
 
@@ -372,6 +391,8 @@ public static class GeneratePipeline
         SourceLang.Php => "php",
         SourceLang.PowerShell => "powershell",
         SourceLang.Bash => "bash",
+        SourceLang.C => "c17",
+        SourceLang.Cpp => "cpp20",
         _ => ""
     };
 
@@ -387,6 +408,8 @@ public static class GeneratePipeline
         SourceLang.Php => new PhpSourceParser(),
         SourceLang.PowerShell => new PowerShellSourceParser(),
         SourceLang.Bash => new BashSourceParser(),
+        SourceLang.C => new C17SourceParser(),
+        SourceLang.Cpp => new Cpp20SourceParser(),
         _ => new RoslynCSharpParser()
     };
 
@@ -399,6 +422,8 @@ public static class GeneratePipeline
         SourceLang.Php => new PhpTestFrameworkRegistry().ExtractEntries,
         SourceLang.PowerShell => new PsTestFrameworkRegistry().ExtractEntries,
         SourceLang.Bash => new ShTestFrameworkRegistry().ExtractEntries,
+        SourceLang.C => new CxxTestFrameworkRegistry().ExtractEntries,
+        SourceLang.Cpp => new CxxTestFrameworkRegistry().ExtractEntries,
         _ => new TestFrameworkRegistry().ExtractEntries
     };
 
@@ -411,6 +436,8 @@ public static class GeneratePipeline
         SourceLang.Php => PhpCatalogLowering.Lower(inv, substitute),
         SourceLang.PowerShell => PowerShellCatalogLowering.Lower(inv, substitute),
         SourceLang.Bash => BashCatalogLowering.Lower(inv, substitute),
+        SourceLang.C => CCatalogLowering.Lower(inv, substitute),
+        SourceLang.Cpp => CppCatalogLowering.Lower(inv, substitute),
         _ => DotNetCatalogLowering.Lower(inv, substitute)
     };
 

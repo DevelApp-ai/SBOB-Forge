@@ -563,6 +563,116 @@ public class EndToEndTests
         Assert.Contains("develapp.io/parser: lexical", result.SbobYaml);
     }
 
+    // ---- M5: C (GoogleTest) / C++ (Catch2) fixtures (#8) ----------------
+
+    [Theory]
+    [InlineData("c-googletest-fixture")]
+    [InlineData("cpp-catch2-fixture")]
+    public void M5FixtureRegeneratesByteIdenticallyAndDoesNotDrift(string fixtureName)
+    {
+        using var temp = new TempDir(CopyFixtureToTemp(fixtureName));
+        var first = Generate(temp.Path);
+        var second = Generate(temp.Path);
+        Assert.Equal(first.SbobYaml, second.SbobYaml);
+        Assert.Equal(first.ProvenanceJsonl, second.ProvenanceJsonl);
+        Assert.Equal(first.CoverageJson, second.CoverageJson);
+        Assert.Equal(first.Ir.ComputeBehaviorHash(), second.Ir.ComputeBehaviorHash());
+
+        var repo = FindRepoRoot();
+        var golden = Path.Combine(repo, "examples", fixtureName, "sbob", first.SbobFileName);
+        if (File.Exists(golden))
+            Assert.Equal(File.ReadAllText(golden), first.SbobYaml);
+    }
+
+    [Fact]
+    public void CGoogletestFixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("c-googletest-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(3, result.Ir.Opens.Count);
+        var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
+        Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
+        Assert.Equal(2, config.Provenance.Count);
+        Assert.Contains(config.Provenance, p => p.TestId.StartsWith("sut:<global>."));
+        Assert.Contains(config.Provenance, p => p.TestId.EndsWith("::ConfigStore.OpensConfigReadOnly"));
+
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, cache.Flags);
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+
+        var log = Assert.Single(result.Ir.Opens, o => o.Path == "/var/log/c-app.log");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, log.Flags);
+
+        // execvp("git", (char*[]){"git","status",NULL}) → execPathPolicy argv
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/usr/bin/git", exec.Path);
+        Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
+
+        // getaddrinfo("api.example.com", "443") → egress
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+
+        // snprintf-built path passed to fopen — non-constant path quarantines
+        Assert.Contains(result.Ir.Coverage.Quarantined, q => q.File.EndsWith("store.c"));
+        // unlink → delete primitive, unrepresentable in the SBOB spec
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        // GTEST_SKIP test excluded; static helper is harness noise
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::ConfigStore.SkippedLegacyPath"));
+        Assert.Contains(result.Ir.Coverage.Noise,
+            n => n.Description.Contains("test helper") && n.File.EndsWith("store_test.c"));
+        Assert.Equal(4, result.Ir.Coverage.TestEntries);
+
+        // disabled-entry isolation: the skipped test body's fopen never reaches the SBOB
+        Assert.DoesNotContain(result.Ir.Opens, o => o.Path == "/etc/app/legacy.json");
+    }
+
+    [Fact]
+    public void CppCatch2FixtureLiftsExpectedSections()
+    {
+        using var temp = new TempDir(CopyFixtureToTemp("cpp-catch2-fixture"));
+        var result = Generate(temp.Path);
+
+        Assert.Equal(4, result.Ir.Opens.Count);
+        var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
+        Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
+        Assert.Equal(2, config.Provenance.Count);
+        Assert.Contains(config.Provenance, p => p.TestId.StartsWith("sut:app.ConfigStore."));
+        Assert.Contains(config.Provenance, p => p.TestId.EndsWith("::loads config"));
+
+        var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, cache.Flags);
+        Assert.Equal(ResolutionTier.Pattern, cache.Tier);
+
+        var log = Assert.Single(result.Ir.Opens, o => o.Path == "/var/log/cpp-app.log");
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_APPEND" }, log.Flags);
+
+        var db = Assert.Single(result.Ir.Opens, o => o.Path == "/var/lib/cpp-app/db.dat");
+        Assert.Equal(new[] { "O_RDWR" }, db.Flags);
+
+        // std::system("git status") → /bin/sh -c shell lowering
+        var exec = Assert.Single(result.Ir.Execs);
+        Assert.Equal("/bin/sh", exec.Path);
+        Assert.Equal(new[] { "/bin/sh", "-c", "git status" }, exec.Args);
+
+        // boost::asio resolver.resolve("api.example.com", "443") → egress
+        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
+        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
+
+        // concatenated ifstream path — non-constant path quarantines
+        Assert.Contains(result.Ir.Coverage.Quarantined, q => q.File.EndsWith("config_store.cpp"));
+        // std::filesystem::remove_all → delete primitive
+        Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
+        // SKIP() test excluded; static helper is harness noise
+        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::legacy path is retired"));
+        Assert.Contains(result.Ir.Coverage.Noise,
+            n => n.Description.Contains("test helper") && n.File.EndsWith("config_store_test.cpp"));
+        Assert.Equal(5, result.Ir.Coverage.TestEntries);
+
+        // disabled-entry isolation: the skipped test body's std::system("false") never reaches the SBOB
+        Assert.DoesNotContain(result.Ir.Execs, e => e.Args.Contains("false"));
+    }
+
     private sealed class TempDir : IDisposable
     {
         public TempDir(string path) => Path = path;

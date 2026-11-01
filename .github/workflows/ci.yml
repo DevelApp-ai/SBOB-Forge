@@ -8,6 +8,9 @@ on:
 jobs:
   build-test-drift:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -15,19 +18,57 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: SDK info
+        run: dotnet --info | tee sdkinfo.log
+
       - name: Restore
-        run: dotnet restore
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet restore 2>&1 | tee restore.log
 
       - name: Build (warnings as errors)
-        run: dotnet build --no-restore -warnaserror
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build --no-restore -warnaserror 2>&1 | tee build.log
 
       - name: Test
-        run: dotnet test --no-build --logger "trx"
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test --no-build --logger "trx" 2>&1 | tee test.log
 
       # Org decision #26: generated artifacts are committed and drift-gated.
       # Every fixture SBOB must regenerate byte-identically from the pinned lock.
       - name: Drift gate (all fixtures --check --frozen)
+        shell: bash
         run: |
-          for fixture in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-testing js-jest ts-vitest php-phpunit powershell-pester bash-bats; do
-            dotnet run --no-build --project src/SBOBForge.Cli -- generate "examples/$fixture-fixture" --check --frozen
+          set -o pipefail
+          for fixture in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-testing js-jest ts-vitest php-phpunit powershell-pester bash-bats c-googletest cpp-catch2; do
+            dotnet run --no-build --project src/SBOBForge.Cli -- generate "examples/$fixture-fixture" --check --frozen 2>&1 | tee -a drift.log
           done
+
+      # On failure, post the captured step logs to the PR so the failure cause is
+      # visible without downloading the run archive (agent workflow, org decision #29).
+      - name: Report failure context to PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const chunks = [];
+            for (const f of ['sdkinfo.log', 'restore.log', 'build.log', 'test.log', 'drift.log']) {
+              try {
+                const t = fs.readFileSync(f, 'utf8').trimEnd();
+                if (t.length === 0) continue;
+                chunks.push('### ' + f + '\n```\n' + (t.length > 14000 ? '...[tail]\n' + t.slice(-14000) : t) + '\n```');
+              } catch {}
+            }
+            const body = chunks.join('\n\n') || 'no logs captured';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: 'CI failure context (run ' + context.runId + '):\n\n' + body
+            });

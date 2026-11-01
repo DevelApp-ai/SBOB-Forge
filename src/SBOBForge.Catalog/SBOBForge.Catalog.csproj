@@ -14,6 +14,8 @@
     <EmbeddedResource Include="catalog\php-catalog.json" LogicalName="SBOBForge.Catalog.php-catalog.json" />
     <EmbeddedResource Include="catalog\powershell-catalog.json" LogicalName="SBOBForge.Catalog.powershell-catalog.json" />
     <EmbeddedResource Include="catalog\bash-catalog.json" LogicalName="SBOBForge.Catalog.bash-catalog.json" />
+    <EmbeddedResource Include="catalog\c-catalog.json" LogicalName="SBOBForge.Catalog.c-catalog.json" />
+    <EmbeddedResource Include="catalog\cpp-catalog.json" LogicalName="SBOBForge.Catalog.cpp-catalog.json" />
   </ItemGroup>
 
 </Project>

@@ -47,7 +47,9 @@ public sealed record LoweredInvocation(
 /// exec, execTokens, execShell, subprocessExec, egress, egressHostPort,
 /// ingress, ingressHostPort, egressNetDial, ingressNetListen, openGoFlags,
 /// execProgramArgs, phpFileGetContents, psStartProcess, psCallOperator,
-/// psInvokeExpression, psEgressUri, shCommand, shCurl, shNc, shSsh.
+/// psInvokeExpression, psEgressUri, shCommand, shCurl, shNc, shSsh,
+/// openCFlags, cExecvp, cGetAddrInfo, cxConnect, cxListen, cxxIfstream,
+/// cxxOfstream, cxFstreamMask.
 /// </summary>
 public static class CatalogLowering
 {
@@ -112,6 +114,14 @@ public static class CatalogLowering
             "shCurl" => LowerShCurl(rule, invocation, substitute),
             "shNc" => LowerShNc(rule, invocation, substitute),
             "shSsh" => LowerShSsh(rule, invocation, substitute),
+            "openCFlags" => LowerOpenCFlags(rule, invocation, substitute),
+            "cExecvp" => LowerCExecvp(rule, invocation, substitute),
+            "cGetAddrInfo" => LowerCGetAddrInfo(rule, invocation, substitute),
+            "cxConnect" => LowerCxConnect(rule, invocation, substitute),
+            "cxListen" => LowerCxListen(rule, invocation, substitute),
+            "cxxIfstream" => LowerCxxIfstream(rule, invocation, substitute),
+            "cxxOfstream" => LowerCxxOfstream(rule, invocation, substitute),
+            "cxFstreamMask" => LowerCxFstreamMask(rule, invocation, substitute),
             _ => throw new InvalidOperationException($"Unknown catalog rule kind '{rule.Kind}' ({rule.Id})")
         };
     }
@@ -876,6 +886,293 @@ public static class CatalogLowering
 
     // ---- helpers ----------------------------------------------------------
 
+    // ---- C / C++ (M5, TDS 5.2) ---------------------------------------------
+
+    private static readonly HashSet<string> s_cOpenFlags = new(StringComparer.Ordinal)
+    {
+        "O_RDONLY", "O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND", "O_EXCL", "O_DIRECTORY"
+    };
+
+    /// <summary>open(path, O_* | O_* …): the parser pre-merges the flag mask into one identifier (TDS 5.2 M5).</summary>
+    private static LoweredInvocation LowerOpenCFlags(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var path = Arg(inv, 0);
+        if (path is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "open path argument missing");
+        var resolvedPath = Resolve(path, substitute);
+        if (!resolvedPath.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"open path is {KindName(resolvedPath)}, not a constant literal");
+
+        var flagsArg = Arg(inv, 1);
+        if (flagsArg is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "open flags argument missing");
+        var resolvedFlags = Resolve(flagsArg, substitute);
+        if (resolvedFlags.Kind != ArgKind.Identifier)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"open flags are {KindName(resolvedFlags)}, not an O_* constant mask");
+        var flags = new List<string>();
+        foreach (var part in resolvedFlags.Value.Split('|',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!s_cOpenFlags.Contains(part))
+                return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                    $"open flag '{part}' is not a resolvable O_* constant");
+            flags.Add(part);
+        }
+        if (flags.Count == 0)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "open flags mask is empty");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
+            resolvedPath.Value, flags, Array.Empty<string>(), true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>execv/execvp/execve(path, argv): literal argv list → exact argv; argv0-literal partial list → argv0 anchoring (TDS 5.2).</summary>
+    private static LoweredInvocation LowerCExecvp(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var file = Arg(inv, 0);
+        if (file is null)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec path argument missing");
+        var resolvedFile = Resolve(file, substitute);
+
+        var argvArg = Arg(inv, 1);
+        if (argvArg is null)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec argv argument missing");
+        var resolvedArgv = Resolve(argvArg, substitute);
+
+        if (resolvedArgv.Kind == ArgKind.List)
+        {
+            var argv = resolvedArgv.ListElements().ToArray();
+            if (argv.Length == 0)
+                return Quarantined(rule, BehaviorPrimitive.Exec, inv, "exec argv list is empty");
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                argv[0], Array.Empty<string>(), argv[1..], true,
+                null, null, "", NetDirection.Egress, null, null);
+        }
+
+        if (resolvedArgv.Kind == ArgKind.PartialList)
+        {
+            // argv0-anchoring (TDS 5.2): argv[0] is a knowable literal, the remaining args are not
+            return new LoweredInvocation(
+                rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+                resolvedFile.IsLiteral ? resolvedFile.Value : resolvedArgv.Value,
+                Array.Empty<string>(), Array.Empty<string>(), false,
+                null, null, "", NetDirection.Egress, null, null);
+        }
+
+        // argv is a plain variable: the program is knowable only from a literal path argument
+        if (!resolvedFile.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Exec, inv,
+                $"exec target is {KindName(resolvedFile)} and argv is {KindName(resolvedArgv)}, neither statically resolvable");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Exec,
+            resolvedFile.Value, Array.Empty<string>(), Array.Empty<string>(), false,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>getaddrinfo(host, service): literal host, numeric service; NULL service → port unknown (TDS 5.2 M5).</summary>
+    private static LoweredInvocation LowerCGetAddrInfo(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var host = Arg(inv, 0);
+        if (host is null)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv, "resolve host argument missing");
+        var resolvedHost = Resolve(host, substitute);
+        if (!resolvedHost.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                $"resolve host is {KindName(resolvedHost)}, not a constant literal");
+
+        int? port = null;
+        if (Arg(inv, 1) is { } service)
+        {
+            var resolvedService = Resolve(service, substitute);
+            if (resolvedService.Kind == ArgKind.Identifier && resolvedService.Value == "NULL")
+            {
+                port = null; // NULL service: host resolvable, port unknown
+            }
+            else
+            {
+                if (!resolvedService.IsLiteral)
+                    return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                        $"resolve service is {KindName(resolvedService)}, not a constant literal");
+                if (!int.TryParse(resolvedService.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+                    return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                        $"resolve service '{resolvedService.Value}' is not a numeric port (service names are not resolved in v1)");
+                port = parsed;
+            }
+        }
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            resolvedHost.Value.ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
+    }
+
+    /// <summary>connect(fd, …): the parser attaches hoisted sin_addr/sin_port literals as named host/port args (documented M5 modeling decision).</summary>
+    private static LoweredInvocation LowerCxConnect(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        string? host = null;
+        string? portText = null;
+        foreach (var a in inv.Args)
+        {
+            if (a.IsNamed("host")) host = Resolve(a, substitute).Value;
+            else if (a.IsNamed("port")) portText = Resolve(a, substitute).Value;
+        }
+        if (host is null)
+            return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                "connect peer address is not a hoisted constant (socket address not statically resolvable)");
+        int? port = null;
+        if (portText is not null)
+        {
+            if (!int.TryParse(portText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+                return Quarantined(rule, BehaviorPrimitive.Connect, inv,
+                    $"connect port '{portText}' is not a constant integer");
+            port = parsed;
+        }
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Connect,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            host.ToLowerInvariant(), port, ProtocolTcp, NetDirection.Egress, null, null);
+    }
+
+    /// <summary>listen(fd, backlog): the parser attaches the hoisted sin_port literal as the named port arg (documented M5 modeling decision).</summary>
+    private static LoweredInvocation LowerCxListen(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        string? portText = null;
+        foreach (var a in inv.Args)
+            if (a.IsNamed("port"))
+                portText = Resolve(a, substitute).Value;
+        if (portText is null)
+            return Quarantined(rule, BehaviorPrimitive.Listen, inv,
+                "listen port is not a hoisted constant (bind address not statically resolvable)");
+        if (!int.TryParse(portText, NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+            return Quarantined(rule, BehaviorPrimitive.Listen, inv,
+                $"listen port '{portText}' is not a constant integer");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Listen,
+            null, Array.Empty<string>(), Array.Empty<string>(), true,
+            "", port, ProtocolTcp, NetDirection.Ingress, null, null);
+    }
+
+    /// <summary>std::ifstream construction/open(path): fixed O_RDONLY (TDS 5.2 M5).</summary>
+    private static LoweredInvocation LowerCxxIfstream(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var path = Arg(inv, 0);
+        if (path is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "ifstream path argument missing");
+        var resolved = Resolve(path, substitute);
+        if (!resolved.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"ifstream path is {KindName(resolved)}, not a constant literal");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
+            resolved.Value, new[] { "O_RDONLY" }, Array.Empty<string>(), true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>std::ofstream construction/open(path[, std::ios mask]): O_WRONLY|O_CREAT plus app/trunc (TDS 5.2 M5).</summary>
+    private static LoweredInvocation LowerCxxOfstream(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var path = Arg(inv, 0);
+        if (path is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "ofstream path argument missing");
+        var resolvedPath = Resolve(path, substitute);
+        if (!resolvedPath.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"ofstream path is {KindName(resolvedPath)}, not a constant literal");
+
+        var flags = new List<string> { "O_WRONLY", "O_CREAT" };
+        var mask = Arg(inv, 1);
+        if (mask is null)
+        {
+            flags.Add("O_TRUNC"); // ofstream truncates by default
+        }
+        else
+        {
+            var resolvedMask = Resolve(mask, substitute);
+            if (resolvedMask.Kind != ArgKind.Identifier)
+                return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                    $"ofstream mode is {KindName(resolvedMask)}, not a std::ios constant mask");
+            var append = false;
+            foreach (var part in SplitMask(resolvedMask.Value))
+            {
+                switch (part)
+                {
+                    case "std::ios::app":
+                        append = true;
+                        break;
+                    case "std::ios::out" or "std::ios::trunc" or "std::ios::binary":
+                        break; // trunc is the default below; binary needs no flag
+                    default:
+                        return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                            $"ofstream mode flag '{part}' is not resolvable in v1");
+                }
+            }
+            flags.Add(append ? "O_APPEND" : "O_TRUNC");
+        }
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
+            resolvedPath.Value, flags, Array.Empty<string>(), true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>std::fstream construction/open(path, std::ios mask): in/out/trunc/app mask mapping (TDS 5.2 M5).</summary>
+    private static LoweredInvocation LowerCxFstreamMask(CatalogRule rule, InvocationDecl inv, Func<CallArg, CallArg?>? substitute)
+    {
+        var path = Arg(inv, 0);
+        if (path is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "fstream path argument missing");
+        var resolvedPath = Resolve(path, substitute);
+        if (!resolvedPath.IsLiteral)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"fstream path is {KindName(resolvedPath)}, not a constant literal");
+
+        var mask = Arg(inv, 1);
+        if (mask is null)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv, "fstream mode mask argument missing");
+        var resolvedMask = Resolve(mask, substitute);
+        if (resolvedMask.Kind != ArgKind.Identifier)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                $"fstream mode is {KindName(resolvedMask)}, not a std::ios constant mask");
+
+        var read = false;
+        var write = false;
+        var trunc = false;
+        var append = false;
+        foreach (var part in SplitMask(resolvedMask.Value))
+        {
+            switch (part)
+            {
+                case "std::ios::in": read = true; break;
+                case "std::ios::out": write = true; break;
+                case "std::ios::trunc": trunc = true; break;
+                case "std::ios::app": append = true; break;
+                case "std::ios::binary": break; // no flag representation in v1
+                default:
+                    return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                        $"fstream mode flag '{part}' is not resolvable in v1");
+            }
+        }
+        if (!read && !write)
+            return Quarantined(rule, BehaviorPrimitive.Open, inv,
+                "fstream mode mask has neither std::ios::in nor std::ios::out");
+
+        var flags = new List<string>();
+        if (read && write) flags.Add("O_RDWR");
+        else if (read) flags.Add("O_RDONLY");
+        else flags.AddRange(new[] { "O_WRONLY", "O_CREAT" });
+        if (trunc) flags.Add("O_TRUNC");
+        if (append) flags.Add("O_APPEND");
+        return new LoweredInvocation(
+            rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
+            resolvedPath.Value, flags, Array.Empty<string>(), true,
+            null, null, "", NetDirection.Egress, null, null);
+    }
+
+    /// <summary>Split a pre-merged `a | b` constant mask (TDS 5.2 M5).</summary>
+    private static IEnumerable<string> SplitMask(string mask) =>
+        mask.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     private static LoweredInvocation Quarantined(CatalogRule rule, BehaviorPrimitive primitive, InvocationDecl inv, string reason) => new(
         rule.Id, LiftOutcome.Quarantine, primitive,
         null, Array.Empty<string>(), Array.Empty<string>(), false,
@@ -971,6 +1268,28 @@ public static class PowerShellCatalogLowering
 public static class BashCatalogLowering
 {
     public static LanguageCatalog Catalog { get; } = BashCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>C lowering entry point (TDS 7.3, M5).</summary>
+public static class CCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = CCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>C++ lowering entry point (TDS 7.3, M5).</summary>
+public static class CppCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = CppCatalog.LoadDefault();
 
     public static LoweredInvocation? Lower(
         InvocationDecl invocation,
