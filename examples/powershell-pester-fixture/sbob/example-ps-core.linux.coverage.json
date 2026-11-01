@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "9f574c321efc263ca4ab9f05eafe3b878a9b243b425f0dafee25b11b22307ee8",
+  "BehaviorHash": "52fefb3c7bfeccfe8dd6ada092a72bc77bff5db5fd9b83299edf11041cea204e",
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 4,
@@ -37,8 +37,5 @@
       "TestId": "sut:config-store.Remove-Cache",
       "Rule": ""
     }
-  ],
-  "LexicalParsers": [
-    "powershell"
   ]
 }

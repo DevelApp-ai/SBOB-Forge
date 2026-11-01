@@ -7,9 +7,8 @@ metadata:
     kubescape.io/managed-by: User
     develapp.io/binding: package-purl
     develapp.io/generator: sbobforge@0.1.0
-    develapp.io/grammar-lock-sha256: a1aa645984c43b48b5f751727c61d728f60be5375490d77cea2850d714b09293
-    develapp.io/behavior-hash: 9f574c321efc263ca4ab9f05eafe3b878a9b243b425f0dafee25b11b22307ee8
-    develapp.io/parser: lexical
+    develapp.io/grammar-lock-sha256: 8e5651bf16ecf80ab37c143263072547922c294ad593ca17fe68cdef116ffe57
+    develapp.io/behavior-hash: 52fefb3c7bfeccfe8dd6ada092a72bc77bff5db5fd9b83299edf11041cea204e
 spec:
   architectures: [amd64]
   imageID: pkg:nuget/example-ps-core@1.0.0
