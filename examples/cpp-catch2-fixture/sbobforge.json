@@ -1,0 +1,15 @@
+{
+  "packageType": "generic",
+  "packageName": "example/cpp-core",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**/*.cpp" ],
+  "testGlobs": [ "tests/**/*.cpp" ],
+  "pathPolicies": [
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+  ],
+  "execPathPolicy": {},
+  "allowParseError": []
+}

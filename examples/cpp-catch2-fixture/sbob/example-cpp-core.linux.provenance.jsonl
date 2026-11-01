@@ -1,0 +1,11 @@
+{  "Primitive": "exec",  "Identifier": "/bin/sh",  "TestId": "sut:app.ConfigStore.runCommand",  "File": "sut/cpp/config_store.cpp",  "Line": 39,  "Tier": "Literal",  "Rule": "cxx.system"}
+{  "Primitive": "exec",  "Identifier": "/bin/sh",  "TestId": "tests/cpp/config_store_test.cpp::runs command",  "File": "sut/cpp/config_store.cpp",  "Line": 39,  "Tier": "Literal",  "Rule": "cxx.system"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "sut:app.ConfigStore.saveCache",  "File": "sut/cpp/config_store.cpp",  "Line": 21,  "Tier": "Pattern",  "Rule": "cxx.ofstream"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "tests/cpp/config_store_test.cpp::writes cache",  "File": "sut/cpp/config_store.cpp",  "Line": 21,  "Tier": "Pattern",  "Rule": "cxx.ofstream"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "sut:app.ConfigStore.loadConfig",  "File": "sut/cpp/config_store.cpp",  "Line": 14,  "Tier": "Literal",  "Rule": "cxx.ifstream"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "tests/cpp/config_store_test.cpp::loads config",  "File": "sut/cpp/config_store.cpp",  "Line": 14,  "Tier": "Literal",  "Rule": "cxx.ifstream"}
+{  "Primitive": "open",  "Identifier": "/var/lib/cpp-app/db.dat",  "TestId": "sut:app.ConfigStore.openDatabase",  "File": "sut/cpp/config_store.cpp",  "Line": 33,  "Tier": "Literal",  "Rule": "cxx.fstream"}
+{  "Primitive": "open",  "Identifier": "/var/lib/cpp-app/db.dat",  "TestId": "tests/cpp/config_store_test.cpp::opens database",  "File": "sut/cpp/config_store.cpp",  "Line": 33,  "Tier": "Literal",  "Rule": "cxx.fstream"}
+{  "Primitive": "open",  "Identifier": "/var/log/cpp-app.log",  "TestId": "sut:app.ConfigStore.appendLog",  "File": "sut/cpp/config_store.cpp",  "Line": 27,  "Tier": "Literal",  "Rule": "cxx.ofstream"}
+{  "Primitive": "open",  "Identifier": "/var/log/cpp-app.log",  "TestId": "tests/cpp/config_store_test.cpp::appends log",  "File": "sut/cpp/config_store.cpp",  "Line": 27,  "Tier": "Literal",  "Rule": "cxx.ofstream"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:app.ConfigStore.syncRemote",  "File": "sut/cpp/config_store.cpp",  "Line": 45,  "Tier": "Literal",  "Rule": "cxx.asio-resolve"}

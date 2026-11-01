@@ -1,0 +1,54 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "a29a9e7fcb068ed69f4454d368302fcbc8752ede8f646aa692d517c4913e1067",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 5,
+  "Quarantined": [
+    {
+      "Primitive": "Open",
+      "Reason": "ifstream path is a non-constant expression, not a constant literal",
+      "File": "sut/cpp/config_store.cpp",
+      "Line": 50,
+      "TestId": "sut:app.ConfigStore.loadUser",
+      "Rule": "cxx.ifstream"
+    }
+  ],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/cpp/config_store_test.cpp",
+      "Line": 33,
+      "TestId": "tests/cpp/config_store_test.cpp::legacy path is retired"
+    },
+    {
+      "Description": "test helper (not an entry method): .SKIP",
+      "File": "tests/cpp/config_store_test.cpp",
+      "Line": 35,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): std.system",
+      "File": "tests/cpp/config_store_test.cpp",
+      "Line": 36,
+      "TestId": ""
+    },
+    {
+      "Description": "test helper (not an entry method): std.system",
+      "File": "tests/cpp/config_store_test.cpp",
+      "Line": 41,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/cpp/config_store.cpp",
+      "Line": 56,
+      "TestId": "sut:app.ConfigStore.cleanCache",
+      "Rule": ""
+    }
+  ],
+  "LexicalParsers": []
+}
