@@ -53,6 +53,7 @@ public static class Program
                 "scan" => CmdScan(args[1..]),
                 "generate" => CmdGenerate(args[1..]),
                 "validate" => CmdValidate(args[1..]),
+                "convert" => CmdConvert(args[1..]),
                 _ => Usage($"unknown command '{command}'")
             };
         }
@@ -73,6 +74,7 @@ public static class Program
               sbobforge generate <repoRoot> [--config <path>] [--lock <path>]
                                 [--target-os <os>] [--check] [--strict] [--frozen]
               sbobforge validate <file.sbob.yaml>
+              sbobforge convert <file.sbob.yaml> <out.yaml>
 
             exit codes: 0 ok, 1 usage, 2 parse/validation error, 3 drift (--check),
                         4 quarantine (--strict), 5 lock mismatch (--frozen)
@@ -405,6 +407,26 @@ public static class Program
         }
         foreach (var e in errors) Console.Error.WriteLine(e);
         return 2;
+    }
+
+    /// <summary>
+    /// Dialect bridge (TDS 10.4): convert a canonically emitted kubescape-dialect
+    /// profile into the Software-Bill-of-Behavior registry dialect (sbobctl
+    /// validate/transpile + sbobs/ registry). Used by the transpiler replay lane
+    /// and the registry publish workflow.
+    /// </summary>
+    private static int CmdConvert(string[] args)
+    {
+        var inPath = args[0];
+        var outPath = args[1];
+        if (!File.Exists(inPath)) return Fail(1, $"no such file: {inPath}");
+        var canonical = File.ReadAllText(inPath);
+        var converted = DialectConverter.ToSbobDialect(canonical);
+        var outDir = Path.GetDirectoryName(Path.GetFullPath(outPath));
+        if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
+        File.WriteAllText(outPath, converted);
+        Console.WriteLine($"converted {inPath} -> {outPath} (sbob.k8sstormcenter.io/v1 / {DialectConverter.SbobKind})");
+        return 0;
     }
 
     private static string? OptionalPath(string[] args, string root)

@@ -439,13 +439,14 @@ Enforcement (org decision #26):
 ### 10.1 Validation lane (CI)
 
 1. `sbobforge validate` — structural validation equivalent to spec v0.0.4 JSON Schema (+ purl `imageID` extension), self-lint for `⋯` misuse, arg-wildcard legality.
-2. Cross-validation with the **Software-Bill-of-Behavior** transpiler: CI checks out that repo and runs its parse/validate/lint stages over the emitted SBOB (Node ≥ 22 per org decision #20). If the transpiler's lint policy caps reject an entry (e.g. wildcard breadth), the failure routes here, not downstream.
+2. Cross-validation with the **Software-Bill-of-Behavior** transpiler: CI checks out that repo at a pinned SHA and runs its parse/validate/lint stages over the emitted SBOB (Node ≥ 22 per org decision #20). The committed fixture goldens are kubescape-dialect; the `transpiler-replay` CI job first converts each with `sbobforge convert` (§10.4) and then runs `sbobctl validate` over the registry-dialect copy. If the transpiler's lint policy caps reject an entry (e.g. wildcard breadth), the failure routes here, not downstream.
 3. `bobctl validate` (upstream, when available for the pinned release) as a tertiary conformance check.
 
 ### 10.2 Signing
 
 - cosign, per org decision #14 (images and artifacts are cosign-signed; same key/identity flow). Signature covers SBOB + provenance sidecar; `bundleVersion`/`behavior-hash` bind the two.
 - Keyless (OIDC) signing in CI with the repo workflow identity is preferred; verification instructions land in the registry PR description.
+- Artifact naming follows `sbobctl`'s `CosignVerifier` contract: `cosign sign-blob --yes --output-signature <file>.sig --bundle <file>.bundle <file>`; verification is `cosign verify-blob --bundle <file>.bundle --certificate-identity-regexp '^https://github.com/DevelApp-ai/' --certificate-oidc-issuer https://token.actions.githubusercontent.com <file>`. The signing stage lives in the `sbob-registry-publish` reusable workflow (§10.3); signing never happens outside CI (the generator itself has no signing identity).
 
 ### 10.3 Packaging & shipping (both, per decision)
 
@@ -453,8 +454,19 @@ Enforcement (org decision #26):
 |---|---|
 | **NuGet embed** | Pack stage includes `sbob/<package>.<os>.sbob.yaml` + provenance via `<None Include="sbob\*.yaml" Pack="true" PackagePath="sbob">`; consumers and pipeline scanners can read the profile straight from the installed package |
 | **Chocolatey embed** | `choco pack` includes `tools/sbob/*.sbob.yaml`; `chocoInstall`/`chocoUninstall` scripts are **not** modified — SBOB is data, not behavior |
-| **Registry publish** | Workflow opens a squash-merged PR (decision #28) adding/updating `sbobs/nuget/<name>.yaml` / `sbobs/choco/<name>.yaml` in Software-Bill-of-Behavior, gated by the repo's existing `sbob-diff-gate` action so behavior changes between versions show as reviewable diffs |
+| **Registry publish** | The reusable workflow `.github/workflows/sbob-registry-publish.yml` (called from the product repo's release lane) runs: drift gate (`generate --check --frozen`, #26) → cosign keyless signing (§10.2) → `sbobforge convert` to the registry dialect (§10.4) → `sbobctl diff` vs the previous released profile at the pinned Software-Bill-of-Behavior SHA (the `sbob-diff-gate` ladder, `--fail-on mandatory`) → PR adding/updating `sbobs/nuget/<name>.yaml` / `sbobs/choco/<name>.yaml` (+ `.sig`/`.bundle`) in Software-Bill-of-Behavior, squash-merged per decision #28 so behavior changes between versions show as reviewable diffs. The pipeline opens the PR; it never merges it. Cross-repo PR auth uses the `SBOB_REGISTRY_TOKEN` org secret |
 | **OCI path (later)** | When a package is baked into an image, the same generator emits the image-bound profile into the image repo (`sbob/`), consumed by Kubescape node-agent; signed and stored alongside image SBOM |
+
+### 10.4 Dialect bridge (kubescape ↔ registry dialect)
+
+SBOB-Forge canonically emits the upstream bob-spec dialect (`spdx.softwarecomposition.kubescape.io/v1beta1` / `ContainerProfile`), while the Software-Bill-of-Behavior transpiler and its `sbobs/` registry consume `sbob.k8sstormcenter.io/v1` / `SoftwareBillOfBehavior`. The two dialects are isomorphic below the header — `execs`, `opens`, `ingress`, `egress`, `architectures` and the `develapp.io/*` annotations all pass the registry validator unchanged — so the bridge is a guarded header-level rewrite (`DialectConverter`, exposed as `sbobforge convert <in> <out>`):
+
+- `apiVersion`/`kind` swap to the registry dialect;
+- the kubescape UI marker annotation (`kubescape.io/managed-by: User`) is swapped for the registry's `sbob.spec-version: "0.0.4"` marker;
+- everything below the header stays byte-identical — the `develapp.io/behavior-hash` annotation still binds the converted file;
+- a foreign or non-canonical input fails with exit 2 (a file that is not our canonical output could hide behavior and must never be silently header-swapped).
+
+The transpiler-replay CI lane (§10.1) and the registry publish workflow (§10.3) both go through the converter, so the registry copy and the emitted profile can never diverge in content — only in header and dialect marker.
 
 ---
 
@@ -505,6 +517,7 @@ sbobforge scan [--framework …]            # discovery + parse report, no emiss
 sbobforge generate [--check] [--frozen] [--strict]
                    [--target-os linux|windows|all] [--image <ref@digest>]
 sbobforge validate <file…>                 # schema + self-lint + purl check
+sbobforge convert <file.sbob.yaml> <out>   # dialect bridge: registry dialect (TDS 10.4)
 sbobforge explain <path-or-entry>          # provenance lookup
 sbobforge version                         # tool + IR + catalog versions
 ```
