@@ -9,6 +9,14 @@
       "Version": "1",
       "Sha256": "9e252dccf873aa0a38a50d8d980b98ebdf7ddad43f5ed3176c8a4d97ba3bc2e2"
     },
+    "go-catalog": {
+      "Version": "1",
+      "Sha256": "a5cde95a72da4b55860d441a8639b233f301fd4a2345c862e7f1d0c3d84223b5"
+    },
+    "go119": {
+      "Version": "1.0.0",
+      "Sha256": ""
+    },
     "java-catalog": {
       "Version": "1",
       "Sha256": "62df234830546dd2d37983a86a52f38e480f3b862875caade7cc3e3503d47a84"
@@ -17,12 +25,20 @@
       "Version": "1.0.1",
       "Sha256": ""
     },
+    "js-catalog": {
+      "Version": "1",
+      "Sha256": "57cdb1dc16fa124af167f3c522eb98d06ad736a25b55fda3f6cce15517360876"
+    },
     "python-catalog": {
       "Version": "1",
       "Sha256": "0990de3b4ab706b7acc8d38046e76b658127124a42f54da76512e4f1bbcd78ab"
     },
     "python311": {
       "Version": "1.0.3",
+      "Sha256": ""
+    },
+    "typescript": {
+      "Version": "1.0.0",
       "Sha256": ""
     }
   },

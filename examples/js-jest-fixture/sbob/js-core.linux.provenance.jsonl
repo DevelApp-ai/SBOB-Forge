@@ -1,0 +1,9 @@
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "sut:config-store.runGitStatus",  "File": "sut/js/config-store.js",  "Line": 24,  "Tier": "Pattern",  "Rule": "js.cp.execfile"}
+{  "Primitive": "exec",  "Identifier": "/usr/bin/git",  "TestId": "tests/js/config-store.test.js::config store \u003E runs git status",  "File": "sut/js/config-store.js",  "Line": 24,  "Tier": "Pattern",  "Rule": "js.cp.execfile"}
+{  "Primitive": "open",  "Identifier": "/app/\u22EF/cache/last.json",  "TestId": "sut:config-store.saveCache",  "File": "sut/js/config-store.js",  "Line": 12,  "Tier": "Pattern",  "Rule": "js.fs.writefilesync"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "sut:config-store.loadConfig",  "File": "sut/js/config-store.js",  "Line": 8,  "Tier": "Literal",  "Rule": "js.fs.readfilesync"}
+{  "Primitive": "open",  "Identifier": "/etc/app/config.json",  "TestId": "tests/js/config-store.test.js::config store \u003E loads config",  "File": "sut/js/config-store.js",  "Line": 8,  "Tier": "Literal",  "Rule": "js.fs.readfilesync"}
+{  "Primitive": "open",  "Identifier": "/var/log/app.log",  "TestId": "tests/js/config-store.test.js::config store \u003E writes log %s[0]",  "File": "tests/js/config-store.test.js",  "Line": 17,  "Tier": "Literal",  "Rule": "js.fs.appendfilesync"}
+{  "Primitive": "open",  "Identifier": "/var/log/other.log",  "TestId": "tests/js/config-store.test.js::config store \u003E writes log %s[1]",  "File": "tests/js/config-store.test.js",  "Line": 17,  "Tier": "Literal",  "Rule": "js.fs.appendfilesync"}
+{  "Primitive": "egress",  "Identifier": "api.example.com",  "TestId": "sut:config-store.fetchStatus",  "File": "sut/js/config-store.js",  "Line": 28,  "Tier": "Literal",  "Rule": "js.fetch"}
+{  "Primitive": "ingress",  "Identifier": ":8080",  "TestId": "sut:config-store.startListener",  "File": "sut/js/config-store.js",  "Line": 33,  "Tier": "Literal",  "Rule": "js.net.listen"}

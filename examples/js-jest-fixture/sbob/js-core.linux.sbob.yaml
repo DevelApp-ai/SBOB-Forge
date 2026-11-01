@@ -1,0 +1,37 @@
+apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
+kind: ContainerProfile
+metadata:
+  name: js-core.linux
+  namespace: develapp
+  annotations:
+    kubescape.io/managed-by: User
+    develapp.io/binding: package-purl
+    develapp.io/generator: sbobforge@0.1.0
+    develapp.io/grammar-lock-sha256: 7539ee76abb3fe2eccc31fc742f538ceb7eb78f0282e00704589fa364a7b7b55
+    develapp.io/behavior-hash: f6e2a4d724fb5e72c5afb0b8530c0b20994bd4e47eda2cd5935a1ddc99b81b26
+spec:
+  architectures: [amd64]
+  imageID: pkg:npm/js-core@1.0.0
+  execs:
+    - path: /usr/bin/git
+      args: [/usr/bin/git, status]
+  opens:
+    - path: "/app/⋯/cache/last.json"
+      flags: [O_WRONLY, O_CREAT, O_TRUNC]
+    - path: /etc/app/config.json
+      flags: [O_RDONLY]
+    - path: /var/log/app.log
+      flags: [O_WRONLY, O_CREAT, O_APPEND]
+    - path: /var/log/other.log
+      flags: [O_WRONLY, O_CREAT, O_APPEND]
+  ingress:
+    - identifier: port-8080-ingress
+      type: external
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - identifier: api.example.com-egress
+      type: external
+      dnsNames: [api.example.com]
+      ports:
+        - { port: 443, protocol: TCP }

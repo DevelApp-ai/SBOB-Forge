@@ -6,6 +6,8 @@
     <ProjectReference Include="..\SBOBForge.Adapters.DotNet\SBOBForge.Adapters.DotNet.csproj" />
     <ProjectReference Include="..\SBOBForge.Adapters.Java\SBOBForge.Adapters.Java.csproj" />
     <ProjectReference Include="..\SBOBForge.Adapters.Python\SBOBForge.Adapters.Python.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters.Go\SBOBForge.Adapters.Go.csproj" />
+    <ProjectReference Include="..\SBOBForge.Adapters.TypeScript\SBOBForge.Adapters.TypeScript.csproj" />
     <ProjectReference Include="..\SBOBForge.Catalog\SBOBForge.Catalog.csproj" />
   </ItemGroup>
 

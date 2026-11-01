@@ -1,0 +1,24 @@
+{
+  "id": "go",
+  "version": 1,
+  "rules": [
+    { "id": "go.os.open",       "kind": "open",           "receiver": "os",   "method": "Open",       "flags": [ "O_RDONLY" ] },
+    { "id": "go.os.readfile",   "kind": "open",           "receiver": "os",   "method": "ReadFile",   "flags": [ "O_RDONLY" ] },
+    { "id": "go.os.create",     "kind": "open",           "receiver": "os",   "method": "Create",    "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "go.os.writefile",  "kind": "open",           "receiver": "os",   "method": "WriteFile",  "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "go.os.openfile",   "kind": "openGoFlags",    "receiver": "os",   "method": "OpenFile" },
+    { "id": "go.os.mkdir",      "kind": "open",           "receiver": "os",   "method": "Mkdir",      "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "go.os.mkdirall",   "kind": "open",           "receiver": "os",   "method": "MkdirAll",   "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "go.os.remove",     "kind": "unrepresentable", "receiver": "os",   "method": "Remove",     "unrepresentablePrimitive": "delete" },
+    { "id": "go.os.removeall",  "kind": "unrepresentable", "receiver": "os",  "method": "RemoveAll",  "unrepresentablePrimitive": "delete" },
+
+    { "id": "go.exec.command",  "kind": "exec",           "receiver": "exec", "method": "Command" },
+
+    { "id": "go.http.get",      "kind": "egress",         "receiver": "http", "method": "Get" },
+    { "id": "go.http.post",     "kind": "egress",         "receiver": "http", "method": "Post" },
+    { "id": "go.http.head",     "kind": "egress",         "receiver": "http", "method": "Head" },
+
+    { "id": "go.net.dial",      "kind": "egressNetDial",  "receiver": "net",  "method": "Dial" },
+    { "id": "go.net.listen",    "kind": "ingressNetListen", "receiver": "net", "method": "Listen" }
+  ]
+}

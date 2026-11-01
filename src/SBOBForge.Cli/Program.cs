@@ -85,11 +85,15 @@ public static class Program
         Console.WriteLine($"sbobforge {Version} (IR v{Core.Model.BehaviorIr.CurrentVersion})");
         Console.WriteLine($"  parser backends: roslyn-csharp {GeneratePipeline.RoslynVersion()}, " +
                           $"sbobforge-java17 {Parsing.JavaSourceParser.Version}, " +
-                          $"sbobforge-python311 {Parsing.PythonSourceParser.Version} (pinned via lock)");
+                          $"sbobforge-python311 {Parsing.PythonSourceParser.Version}, " +
+                          $"sbobforge-go119 {Parsing.GoSourceParser.Version}, " +
+                          $"sbobforge-typescript {Parsing.TypeScriptSourceParser.Version} (pinned via lock)");
         Console.WriteLine($"  source-validation substrate: DevelApp.Minotaur {MinotaurSourceValidator.InstalledVersion()} (pinned via lock)");
         Console.WriteLine($"  catalogs: dotnet v{DotNetCatalogLowering.Catalog.Version}, " +
                           $"java v{JavaCatalogLowering.Catalog.Version}, " +
-                          $"python v{PythonCatalogLowering.Catalog.Version}");
+                          $"python v{PythonCatalogLowering.Catalog.Version}, " +
+                          $"go v{GoCatalogLowering.Catalog.Version}, " +
+                          $"js v{JsCatalogLowering.Catalog.Version}");
         return 0;
     }
 
@@ -131,6 +135,16 @@ public static class Program
             Version = Parsing.PythonSourceParser.Version,
             Sha256 = ""
         };
+        lockModel.Grammars["go119"] = new GrammarLockEntry
+        {
+            Version = Parsing.GoSourceParser.Version,
+            Sha256 = ""
+        };
+        lockModel.Grammars["typescript"] = new GrammarLockEntry
+        {
+            Version = Parsing.TypeScriptSourceParser.Version,
+            Sha256 = ""
+        };
         lockModel.Grammars[DotNetCatalog.LockEntryName] = new GrammarLockEntry
         {
             Version = DotNetCatalogLowering.Catalog.Version.ToString(),
@@ -146,15 +160,29 @@ public static class Program
             Version = PythonCatalogLowering.Catalog.Version.ToString(),
             Sha256 = PythonCatalog.ComputeDefaultHash()
         };
+        lockModel.Grammars[GoCatalog.LockEntryName] = new GrammarLockEntry
+        {
+            Version = GoCatalogLowering.Catalog.Version.ToString(),
+            Sha256 = GoCatalog.ComputeDefaultHash()
+        };
+        lockModel.Grammars[JsCatalog.LockEntryName] = new GrammarLockEntry
+        {
+            Version = JsCatalogLowering.Catalog.Version.ToString(),
+            Sha256 = JsCatalog.ComputeDefaultHash()
+        };
         lockModel.Save(lockPath);
         Console.WriteLine($"{(update ? "updated" : "created")} {lockPath}");
         Console.WriteLine("  minotaur " + lockModel.Minotaur.Version);
         Console.WriteLine("  csharp " + GrammarCsharp(lockModel) +
                           ", java17 " + lockModel.Grammars["java17"].Version +
-                          ", python311 " + lockModel.Grammars["python311"].Version);
+                          ", python311 " + lockModel.Grammars["python311"].Version +
+                          ", go119 " + lockModel.Grammars["go119"].Version +
+                          ", typescript " + lockModel.Grammars["typescript"].Version);
         Console.WriteLine("  dotnet-catalog v" + DotNetCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[DotNetCatalog.LockEntryName].Sha256);
         Console.WriteLine("  java-catalog v" + JavaCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[JavaCatalog.LockEntryName].Sha256);
         Console.WriteLine("  python-catalog v" + PythonCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[PythonCatalog.LockEntryName].Sha256);
+        Console.WriteLine("  go-catalog v" + GoCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[GoCatalog.LockEntryName].Sha256);
+        Console.WriteLine("  js-catalog v" + JsCatalogLowering.Catalog.Version + " sha256 " + lockModel.Grammars[JsCatalog.LockEntryName].Sha256);
         Console.WriteLine("  hash: " + lockModel.ComputeLockHash());
         Console.WriteLine("  review lock changes like a dependency bump (TDS 5.3)");
         return 0;
@@ -179,6 +207,8 @@ public static class Program
                 {
                     ".java" => new Parsing.JavaSourceParser(),
                     ".py" => new Parsing.PythonSourceParser(),
+                    ".go" => new Parsing.GoSourceParser(),
+                    ".js" or ".mjs" or ".cjs" or ".ts" or ".tsx" or ".jsx" => new Parsing.TypeScriptSourceParser(),
                     _ => new RoslynCSharpParser()
                 };
                 parsers[key] = parser;
@@ -191,6 +221,9 @@ public static class Program
             {
                 ".java" => new Adapters.Java.JavaTestFrameworkRegistry().ExtractEntries,
                 ".py" => new Adapters.Python.PythonTestFrameworkRegistry().ExtractEntries,
+                ".go" => new Adapters.Go.GoTestFrameworkRegistry().ExtractEntries,
+                ".js" or ".mjs" or ".cjs" or ".ts" or ".tsx" or ".jsx" =>
+                    new Adapters.TypeScript.JsTestFrameworkRegistry().ExtractEntries,
                 _ => new Adapters.DotNet.TestFrameworkRegistry().ExtractEntries
             };
 

@@ -1,0 +1,32 @@
+{
+  "SbobIrVersion": 1,
+  "BehaviorHash": "3816c66389892432d124d92f8149864ac33ceac6ccf09b76fd845003cd4534bd",
+  "FilesAnalyzed": 2,
+  "TestFiles": 1,
+  "TestEntries": 3,
+  "Quarantined": [],
+  "Noise": [
+    {
+      "Description": "skipped test excluded (harness behavior not profiled)",
+      "File": "tests/ts/status-client.test.ts",
+      "Line": 15,
+      "TestId": "tests/ts/status-client.test.ts::status client \u003E legacy shell"
+    },
+    {
+      "Description": "test helper (not an entry method): .shellOut",
+      "File": "tests/ts/status-client.test.ts",
+      "Line": 16,
+      "TestId": ""
+    }
+  ],
+  "Unrepresentable": [
+    {
+      "Primitive": "unrepresentable",
+      "Reason": "delete",
+      "File": "sut/ts/status-client.ts",
+      "Line": 26,
+      "TestId": "sut:status-client.clearStatus",
+      "Rule": ""
+    }
+  ]
+}

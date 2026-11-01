@@ -1,0 +1,33 @@
+apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
+kind: ContainerProfile
+metadata:
+  name: ts-status.linux
+  namespace: develapp
+  annotations:
+    kubescape.io/managed-by: User
+    develapp.io/binding: package-purl
+    develapp.io/generator: sbobforge@0.1.0
+    develapp.io/grammar-lock-sha256: 7539ee76abb3fe2eccc31fc742f538ceb7eb78f0282e00704589fa364a7b7b55
+    develapp.io/behavior-hash: 3816c66389892432d124d92f8149864ac33ceac6ccf09b76fd845003cd4534bd
+spec:
+  architectures: [amd64]
+  imageID: pkg:npm/ts-status@1.0.0
+  execs:
+    - path: /bin/sh
+      args: [/bin/sh, "-c", git status]
+  opens:
+    - path: /var/log/report.log
+      flags: [O_WRONLY, O_CREAT, O_APPEND]
+    - path: /var/log/ts-status.log
+      flags: [O_WRONLY, O_CREAT, O_APPEND]
+  ingress:
+    - identifier: port-8080-ingress
+      type: external
+      ports:
+        - { port: 8080, protocol: TCP }
+  egress:
+    - identifier: api.example.com-egress
+      type: external
+      dnsNames: [api.example.com]
+      ports:
+        - { port: 443, protocol: TCP }
