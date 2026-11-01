@@ -1,0 +1,29 @@
+{
+  "id": "cpp",
+  "version": 1,
+  "rules": [
+    { "id": "cxx.system", "kind": "execShell", "receiver": "std", "method": "system" },
+    { "id": "cxx.popen",  "kind": "execShell", "receiver": "std", "method": "popen" },
+
+    { "id": "cxx.ifstream",       "kind": "cxxIfstream",    "receiver": "std", "method": "ifstream" },
+    { "id": "cxx.ofstream",       "kind": "cxxOfstream",    "receiver": "std", "method": "ofstream" },
+    { "id": "cxx.fstream",        "kind": "cxFstreamMask",  "receiver": "std", "method": "fstream" },
+    { "id": "cxx.ifstream-ctor",  "kind": "cxxIfstream",    "receiver": "",    "method": "ifstream" },
+    { "id": "cxx.ofstream-ctor",  "kind": "cxxOfstream",    "receiver": "",    "method": "ofstream" },
+    { "id": "cxx.fstream-ctor",   "kind": "cxFstreamMask",  "receiver": "",    "method": "fstream" },
+    { "id": "cxx.ifstream-open",  "kind": "cxxIfstream",    "receiver": "std::ifstream",  "method": "open" },
+    { "id": "cxx.ofstream-open",  "kind": "cxxOfstream",    "receiver": "std::ofstream",  "method": "open" },
+    { "id": "cxx.fstream-open",   "kind": "cxFstreamMask",  "receiver": "std::fstream",   "method": "open" },
+
+    { "id": "cxx.open", "kind": "openCFlags", "receiver": "", "method": "open" },
+
+    { "id": "cxx.fs-create-directory", "kind": "open", "receiver": "std::filesystem", "method": "create_directory", "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+    { "id": "cxx.fs-remove",           "kind": "unrepresentable", "receiver": "std::filesystem", "method": "remove", "unrepresentablePrimitive": "delete" },
+    { "id": "cxx.fs-remove-all",       "kind": "unrepresentable", "receiver": "std::filesystem", "method": "remove_all", "unrepresentablePrimitive": "delete" },
+
+    { "id": "cxx.asio-resolve", "kind": "egressHostPort", "receiver": "boost::asio::ip::tcp::resolver", "method": "resolve" },
+
+    { "id": "cxx.connect", "kind": "cxConnect", "receiver": "", "method": "connect" },
+    { "id": "cxx.listen",  "kind": "cxListen",  "receiver": "", "method": "listen" }
+  ]
+}

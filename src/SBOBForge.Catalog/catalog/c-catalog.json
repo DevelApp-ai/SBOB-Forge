@@ -1,0 +1,24 @@
+{
+  "id": "c",
+  "version": 1,
+  "rules": [
+    { "id": "c.fopen",  "kind": "openModeString", "method": "fopen" },
+    { "id": "c.open",   "kind": "openCFlags",     "method": "open" },
+    { "id": "c.creat",  "kind": "open",           "method": "creat", "flags": [ "O_WRONLY", "O_CREAT", "O_TRUNC" ] },
+    { "id": "c.mkdir",  "kind": "open",           "method": "mkdir", "flags": [ "O_DIRECTORY", "O_CREAT" ] },
+
+    { "id": "c.execv",  "kind": "cExecvp",        "method": "execv" },
+    { "id": "c.execvp", "kind": "cExecvp",        "method": "execvp" },
+    { "id": "c.execve", "kind": "cExecvp",        "method": "execve" },
+    { "id": "c.system", "kind": "execShell",      "method": "system" },
+    { "id": "c.popen",  "kind": "execShell",      "method": "popen" },
+
+    { "id": "c.getaddrinfo", "kind": "cGetAddrInfo", "method": "getaddrinfo" },
+    { "id": "c.connect",     "kind": "cxConnect",    "method": "connect" },
+    { "id": "c.listen",      "kind": "cxListen",     "method": "listen" },
+
+    { "id": "c.unlink", "kind": "unrepresentable", "method": "unlink", "unrepresentablePrimitive": "delete" },
+    { "id": "c.remove", "kind": "unrepresentable", "method": "remove", "unrepresentablePrimitive": "delete" },
+    { "id": "c.rmdir",  "kind": "unrepresentable", "method": "rmdir",  "unrepresentablePrimitive": "delete" }
+  ]
+}
