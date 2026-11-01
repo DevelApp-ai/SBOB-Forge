@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "407e86ffb6b8102ee8f0e48b5b5a23f9dd0f73e789ff15846cfe9101105ffcae",
+  "BehaviorHash": "03fc9efe63447f2fa0672c22e3fb27871c60f78c2f4c30a6b772a8a6b22d0a6b",
   "FilesAnalyzed": 4,
   "TestFiles": 1,
   "TestEntries": 1,
@@ -31,6 +31,5 @@
       "TestId": ""
     }
   ],
-  "Unrepresentable": [],
-  "LexicalParsers": []
+  "Unrepresentable": []
 }

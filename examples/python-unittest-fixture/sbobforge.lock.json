@@ -2,8 +2,8 @@
   "sbobIrVersion": 1,
   "Grammars": {
     "bash": {
-      "Version": "1.0.0",
-      "Sha256": ""
+      "Version": "2.0.0",
+      "Sha256": "ed41e916a2a9082786f3f400be60db412af2b8129bdbc4d543c19e61cbcd1e99"
     },
     "bash-catalog": {
       "Version": "1",
@@ -62,8 +62,8 @@
       "Sha256": "c0ef0ac800afad5065b4a7505c728f90a2b588ae4316c0ec08b03c8bcc83aa31"
     },
     "powershell": {
-      "Version": "1.0.0",
-      "Sha256": ""
+      "Version": "2.0.0",
+      "Sha256": "9ca50d596dd5a574e383d6b5e9a7775049392a54f7c92853b900b9b9b818fe43"
     },
     "powershell-catalog": {
       "Version": "1",
@@ -83,6 +83,6 @@
     }
   },
   "Minotaur": {
-    "Version": "1.5.0"
+    "Version": "1.5.25"
   }
 }

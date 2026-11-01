@@ -107,4 +107,112 @@ public class BashParserTests
     {
         Assert.Throws<ParseHardError>(() => Parse("run_git_status() {\n    git status\n"));
     }
+
+    [Fact]
+    public void IfThenFiBodiesAreStructured()
+    {
+        var model = Parse("""
+            deploy() {
+                if [ -f "/tmp/lock" ]; then
+                    rm "/tmp/lock"
+                elif [ -d "/tmp/cache" ]; then
+                    curl "https://api.example.com/status"
+                else
+                    git status
+                fi
+            }
+            """);
+        var deploy = Assert.Single(model.Types[0].Methods, m => m.Name == "deploy");
+        // `test` brackets produce no invocation; branch bodies are scanned into the function
+        Assert.DoesNotContain(deploy.Invocations, i => i.Method == "[");
+        Assert.Contains(deploy.Invocations, i => i.Method == "rm");
+        Assert.Contains(deploy.Invocations, i => i.Method == "curl");
+        Assert.Contains(deploy.Invocations, i => i.Method == "git");
+    }
+
+    [Fact]
+    public void CaseEsacBodiesAreStructured()
+    {
+        var model = Parse("""
+            route() {
+                case "$1" in
+                    fetch)
+                        curl "https://api.example.com/status"
+                        ;;
+                    clean)
+                        rm -f "/tmp/cache"
+                        ;;
+                    *)
+                        git status
+                        ;;
+                esac
+            }
+            """);
+        var route = Assert.Single(model.Types[0].Methods, m => m.Name == "route");
+        Assert.Contains(route.Invocations, i => i.Method == "curl");
+        Assert.Contains(route.Invocations, i => i.Method == "rm");
+        Assert.Contains(route.Invocations, i => i.Method == "git");
+    }
+
+    [Fact]
+    public void WhileDoneAndHeredocSkip()
+    {
+        var model = Parse("""
+            drain() {
+                while [ -f "/tmp/queue" ]; do
+                    rm "/tmp/queue"
+                done
+                cat <<EOF
+                help text for $1
+                EOF
+            }
+            """);
+        var drain = Assert.Single(model.Types[0].Methods, m => m.Name == "drain");
+        Assert.Contains(drain.Invocations, i => i.Method == "rm");
+        // heredoc body lines are not scanned; the cat command itself is one invocation
+        Assert.Contains(drain.Invocations, i => i.Method == "cat");
+        Assert.DoesNotContain(drain.Invocations, i => i.Method == "help");
+    }
+
+    [Fact]
+    public void DoubleBracketSkipAndFdRedirectNormalization()
+    {
+        var model = Parse("""
+            check() {
+                if [[ "$1" == "fetch" ]]; then
+                    echo "ok"
+                fi
+                git status 2> "/dev/stderr"
+                git status 2>&1
+            }
+            """);
+        var check = Assert.Single(model.Types[0].Methods, m => m.Name == "check");
+        // [[ ]] is skipped wholesale
+        Assert.DoesNotContain(check.Invocations, i => i.Method == "[[");
+        Assert.Contains(check.Invocations, i => i.Method == "echo");
+        // `2> target` normalizes to a plain truncate-redirect invocation
+        var redirects = check.Invocations.Where(i => i.Method == ">").ToList();
+        var err = Assert.Single(redirects);
+        Assert.Equal("/dev/stderr", err.Args[0].Value);
+        // `2>&1` is an fd-merge form: no event
+        Assert.DoesNotContain(check.Invocations, i => i.Method == ">&");
+    }
+
+    [Fact]
+    public void NestedFunctionDefinitionsAreRecognized()
+    {
+        var model = Parse("""
+            outer() {
+                inner() {
+                    git status
+                }
+                inner
+            }
+            """);
+        var outer = Assert.Single(model.Types[0].Methods, m => m.Name == "outer");
+        // the nested def becomes its own method; the call to inner stays in outer
+        var inner = Assert.Single(model.Types[0].Methods, m => m.Name == "inner");
+        Assert.Contains(inner.Invocations, i => i.Method == "git");
+        Assert.Contains(outer.Invocations, i => i.Method == "inner");
+    }
 }

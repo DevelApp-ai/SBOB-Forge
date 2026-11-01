@@ -1,0 +1,196 @@
+Grammar: Bash
+TokenSplitter: Space
+FormatType: EBNF
+
+/*
+ * Bash 5 Grammar Definition (POSIX shell superset)
+ * Authored from scratch for Minotaur (SBOB-Forge M5 Phase B, TDS 5.4).
+ * Covers the core Bash 5 language surface: scripts, simple commands with
+ * assignments and redirections, pipelines and lists (&& || ; & |), all
+ * compound commands (group, subshell, if/elif/else, while, until, for,
+ * case, select, [[ ]] tests, (( )) arithmetic), function definitions,
+ * coproc, here-documents and here-strings, process substitution, arrays,
+ * the full expansion surface (parameter, command, arithmetic, brace,
+ * tilde), quoting, declarations, trap, and comments.
+ *
+ * Modeled after the Go119 grammar style: explicit whitespace/newline
+ * tokens, every referenced symbol defined.
+ */
+
+<program> ::= <line>*
+<line> ::= <complete-command>? <newline>
+
+<complete-command> ::= <list> (<whitespace>? <list-terminator>)?
+<list> ::= <and-or> (<whitespace>? (('&&' | '||') <whitespace>? <and-or>))*
+<list-terminator> ::= ';' | '&' | '&' <newline>
+<and-or> ::= <pipeline> (<whitespace>? ('|' | '|&') <whitespace>? <pipeline>)*
+<pipeline> ::= <bang>? <pipe-sequence>
+<bang> ::= '!' <whitespace>
+<pipe-sequence> ::= <command> (<whitespace>? <pipe-operator> <whitespace>? <command>)*
+<pipe-operator> ::= '|'
+
+<command> ::= <simple-command>
+           | <compound-command>
+           | <function-definition>
+           | <coproc-command>
+
+# --- Simple commands: assignments, command word, arguments, redirections ---
+
+<simple-command> ::= <prefix-assignment>* <command-word>? <argument>* <redirection>*
+<command-word> ::= <word>
+<argument> ::= <word>
+<prefix-assignment> ::= <assignment-word> <whitespace>
+<assignment-word> ::= <variable-name> ('[' <word> ']')? '=' <word>?
+<variable-name> ::= /[_a-zA-Z][_a-zA-Z0-9]*/
+
+# --- Compound commands ---
+
+<compound-command> ::= <brace-group>
+                     | <subshell>
+                     | <if-clause>
+                     | <while-clause>
+                     | <until-clause>
+                     | <for-clause>
+                     | <case-clause>
+                     | <select-clause>
+                     | <test-double-command>
+                     | <test-single-command>
+                     | <arithmetic-command>
+
+<brace-group> ::= '{' <whitespace> <command-list> <whitespace>? ';' <whitespace>? '}'
+<subshell> ::= '(' <command-list> ')'
+<command-list> ::= <complete-command> (<whitespace>? <complete-command>)*
+
+<if-clause> ::= 'if' <whitespace> <command-list> <whitespace>? 'then' <whitespace>? <command-list>
+               (<whitespace>? 'elif' <whitespace> <command-list> <whitespace>? 'then' <whitespace>? <command-list>)*
+               (<whitespace>? 'else' <whitespace>? <command-list>)? <whitespace>? 'fi'
+<while-clause> ::= 'while' <whitespace> <command-list> <whitespace>? 'do' <whitespace>? <command-list> <whitespace>? 'done'
+<until-clause> ::= 'until' <whitespace> <command-list> <whitespace>? 'do' <whitespace>? <command-list> <whitespace>? 'done'
+<for-clause> ::= 'for' <whitespace> <variable-name> <whitespace>? ('in' <whitespace> <word-list>)? <whitespace>? <list-terminator>?
+                 <whitespace>? 'do' <whitespace>? <command-list> <whitespace>? 'done'
+               | 'for' <whitespace> '((' <arithmetic-expression> ';' <arithmetic-expression> ';' <arithmetic-expression> '))'
+                 <whitespace>? ';' <whitespace>? 'do' <whitespace>? <command-list> <whitespace>? 'done'
+<word-list> ::= <word> (<whitespace> <word>)*
+<select-clause> ::= 'select' <whitespace> <variable-name> <whitespace>? ('in' <whitespace> <word-list>)? <whitespace>? ';'?
+                    <whitespace>? 'do' <whitespace>? <command-list> <whitespace>? 'done'
+
+<case-clause> ::= 'case' <whitespace> <word> <whitespace>? 'in' <case-item>* <whitespace>? 'esac'
+<case-item> ::= <pattern-list> ')' <whitespace>? <command-list>? (<whitespace>? <case-terminator>)?
+<case-terminator> ::= ';;' | ';&' | ';;&'
+<pattern-list> ::= <pattern> (<whitespace>? '|' <whitespace>? <pattern>)*
+<pattern> ::= <word>
+
+<test-double-command> ::= '[[' <whitespace> <test-expression> <whitespace> ']]'
+<test-single-command> ::= '[' <whitespace> <test-expression> <whitespace> ']'
+<test-expression> ::= <test-primary> (<whitespace> ('&&' | '||') <whitespace> <test-primary>)*
+<test-primary> ::= '!' <whitespace> <test-primary>
+                | '(' <whitespace> <test-expression> <whitespace> ')'
+                | <unary-test> <whitespace> <word>
+                | <word> <whitespace> <binary-test> <whitespace> <word>
+                | '-t' <whitespace>? /[0-9]+/
+                | <word>
+<unary-test> ::= '-e' | '-f' | '-d' | '-s' | '-r' | '-w' | '-x' | '-z' | '-n' | '-h' | '-L'
+              | '-p' | '-S' | '-b' | '-c' | '-g' | '-k' | '-u' | '-o' | '-v' | '-N' | '-O' | '-G'
+<binary-test> ::= '-eq' | '-ne' | '-lt' | '-le' | '-gt' | '-ge'
+               | '==' | '=' | '!=' | '=~' | '<' | '>' | '-nt' | '-ot' | '-ef' | '-o' | '-a'
+
+<arithmetic-command> ::= '((' <arithmetic-expression> '))'
+
+# --- Function definitions and coproc ---
+
+<function-definition> ::= <function-name> <whitespace>? '(' <whitespace>? ')' <whitespace>? <function-body>
+                       | 'function' <whitespace> <function-name> (<whitespace>? '(' <whitespace>? ')')? <whitespace>? <function-body>
+<function-name> ::= <identifier>
+<identifier> ::= /[_a-zA-Z][_a-zA-Z0-9]*/
+<function-body> ::= <compound-command> <redirection>*
+
+<coproc-command> ::= 'coproc' (<whitespace> <identifier>)? <whitespace>? <compound-command>
+
+# --- Redirections and here-documents ---
+
+<redirection> ::= <whitespace>? (<fd-number>? <redirection-operator> <whitespace>? <redirection-target> | <here-document>)
+<redirection-operator> ::= '<' | '>' | '>>' | '<&' | '>&' | '<>' | '>|' | '&>' | '&>>' | '<<<'
+<fd-number> ::= /[0-9]+/
+<redirection-target> ::= <word> | <fd-number> | '-'
+
+<here-document> ::= ('<<' | '<<-') <heredoc-word> <newline> <heredoc-body>? <newline> <whitespace>? <heredoc-word>
+<heredoc-word> ::= /["'_a-zA-Z0-9]+/
+<heredoc-body> ::= (<heredoc-line> <newline>)*
+<heredoc-line> ::= /[^"'\\\r\n]*/ | '"' /[^"\r\n]*/ | /\\./ | <expansion>
+
+# --- Words, quoting, expansions ---
+
+<word> ::= <word-part>+
+<word-part> ::= <literal-part> | <quoted-part> | <expansion> | <escape-sequence>
+<literal-part> ::= /[^"'`$\\{}<>|&;()\s]+/
+<escape-sequence> ::= '\\' /./
+
+<quoted-part> ::= <single-quoted> | <double-quoted> | <ansi-c-quoted>
+<single-quoted> ::= "'" /[^']*/ "'"
+<double-quoted> ::= '"' <dq-part>* '"'
+<dq-part> ::= /[^"`$\\]+/ | '\\' /./ | <expansion> | <ansi-c-quoted>
+<ansi-c-quoted> ::= '$\'' /([^'\\]|\\.)*/ '\''
+
+<expansion> ::= <parameter-expansion>
+             | <command-substitution>
+             | <arithmetic-expansion>
+             | <brace-expansion>
+             | <tilde-expansion>
+             | <process-substitution>
+
+<parameter-expansion> ::= <simple-parameter-expansion> | <braced-parameter-expansion>
+<simple-parameter-expansion> ::= '$' <special-parameter> | '$' <identifier> | '$' /[0-9]/
+<special-parameter> ::= '@' | '*' | '#' | '?' | '-' | '$' | '!' | '0'
+<braced-parameter-expansion> ::= '${' <braced-parameter-body> '}'
+<braced-parameter-body> ::= <braced-parameter-name> <parameter-operator>?
+                         | '#' <braced-parameter-name>
+                         | '!' <braced-parameter-name>
+                         | <braced-parameter-name> '[' <word>? ']'
+<braced-parameter-name> ::= <identifier> | <special-parameter> | /[0-9]+/
+<parameter-operator> ::= ':'? ('-' | '=' | '?' | '+') <word>
+                      | ':-' <word> | ':=' <word> | ':?' <word> | ':+' <word>
+                      | '##' <pattern> | '#' <pattern> | '%%' <pattern> | '%' <pattern>
+                      | '/' '/'? <pattern> '/'? <word>?
+                      | ':' /[0-9]+/ (':' /[0-9]+/)?
+                      | '@' /[_a-zA-Z]/ | ',' /[_a-zA-Z]/ | '^' /[_a-zA-Z]/
+
+<command-substitution> ::= '$(' <command-list>? ')' | '`' <command-list>? '`'
+<arithmetic-expansion> ::= '$((' <arithmetic-expression> '))' | '$[' <arithmetic-expression> ']'
+<brace-expansion> ::= '{' <brace-sequence> '}'
+<brace-sequence> ::= <word>? '..' <word>? | <word>? ',' <word>? | <word>?
+<tilde-expansion> ::= '~' | '~' /[_a-zA-Z0-9]+/ | '~+' | '~-'
+<process-substitution> ::= '<(' <command-list> ')' | '>(' <command-list> ')'
+
+# --- Arithmetic expressions ((( )) and $(( ))) ---
+
+<arithmetic-expression> ::= <arithmetic-assignment>
+<arithmetic-assignment> ::= <arithmetic-ternary> (<whitespace>? ('=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=') <whitespace>? <arithmetic-ternary>)?
+<arithmetic-ternary> ::= <arithmetic-logical-or> (<whitespace>? '?' <whitespace>? <arithmetic-ternary> <whitespace>? ':' <whitespace>? <arithmetic-ternary>)?
+<arithmetic-logical-or> ::= <arithmetic-logical-and> (<whitespace>? '||' <whitespace>? <arithmetic-logical-and>)*
+<arithmetic-logical-and> ::= <arithmetic-bitwise-or> (<whitespace>? '&&' <whitespace>? <arithmetic-bitwise-or>)*
+<arithmetic-bitwise-or> ::= <arithmetic-bitwise-xor> (<whitespace>? '|' <whitespace>? <arithmetic-bitwise-xor>)*
+<arithmetic-bitwise-xor> ::= <arithmetic-bitwise-and> (<whitespace>? '^' <whitespace>? <arithmetic-bitwise-and>)*
+<arithmetic-bitwise-and> ::= <arithmetic-equality> (<whitespace>? '&' <whitespace>? <arithmetic-equality>)*
+<arithmetic-equality> ::= <arithmetic-relational> (<whitespace>? ('==' | '!=') <whitespace>? <arithmetic-relational>)*
+<arithmetic-relational> ::= <arithmetic-shift> (<whitespace>? ('<' | '<=' | '>' | '>=') <whitespace>? <arithmetic-shift>)*
+<arithmetic-shift> ::= <arithmetic-additive> (<whitespace>? ('<<' | '>>') <whitespace>? <arithmetic-additive>)*
+<arithmetic-additive> ::= <arithmetic-multiplicative> (<whitespace>? ('+' | '-') <whitespace>? <arithmetic-multiplicative>)*
+<arithmetic-multiplicative> ::= <arithmetic-exponent> (<whitespace>? ('*' | '/' | '%') <whitespace>? <arithmetic-exponent>)*
+<arithmetic-exponent> ::= <arithmetic-unary> (<whitespace>? '**' <whitespace>? <arithmetic-unary>)*
+<arithmetic-unary> ::= ('+' | '-' | '!' | '~' | '++' | '--')? <arithmetic-unary> | <arithmetic-primary>
+<arithmetic-primary> ::= /[0-9]+/ | /[0-9]+#[0-9a-zA-Z]+/ | <simple-parameter-expansion> | <braced-parameter-expansion>
+                      | <identifier> | '(' <whitespace>? <arithmetic-expression> <whitespace>? ')'
+
+# --- Declarations and misc builtins with syntax-relevant shapes ---
+
+<declare-command> ::= ('declare' | 'local' | 'export' | 'readonly' | 'typeset' | 'nameref' | 'unset') <declare-option>* (<whitespace> <word>)*
+<declare-option> ::= <whitespace>? '-' /[a-zA-Z]+/
+<array-assignment> ::= <variable-name> '=' '(' <whitespace>? <array-element>* <whitespace>? ')'
+<array-element> ::= '[' <whitespace>? <word> <whitespace>? ']' '=' <word> | <word>
+<trap-command> ::= 'trap' <whitespace> (<word> | <single-quoted> | <double-quoted>) (<whitespace> <word>)*
+
+# --- Whitespace, newlines, comments ---
+
+<whitespace> ::= /[ \t]+/
+<newline> ::= /\r?\n/
+<comment> ::= '#' /[^\n]*/

@@ -33,8 +33,11 @@ public class PowerShellParserTests
         Assert.Equal("/etc/app/config.json", read.Args[0].Value);
         Assert.True(read.Args[0].IsNamed("Path"));
 
-        // command word after a closed param(...) block still lands in command position
+        // `param($Payload)` is modeled as the method's parameter list (TDS 5.4 Phase B):
+        // no "param" invocation, and the command word after the block is scanned normally
         var save = Assert.Single(type.Methods, m => m.Name == "Save-Cache");
+        Assert.Contains("Payload", save.Parameters);
+        Assert.DoesNotContain(save.Invocations, i => i.Method == "param");
         var write = Assert.Single(save.Invocations, i => i.Method == "Set-Content");
         Assert.Equal("%PackageRoot%/cache/last.json", write.Args[0].Value);
     }
@@ -120,14 +123,100 @@ public class PowerShellParserTests
         // $Name inside the double-quoted string marks it interpolated
         Assert.Equal(ArgKind.Interpolated, add.Args[0].Kind);
 
-        // param(…) blocks are tolerated as a command-shaped expression, not a modeled parameter list
-        var save = Assert.Single(log.Invocations, i => i.Method == "param");
-        Assert.Equal(ArgKind.Expression, Assert.Single(save.Args).Kind);
+        // param($Name) is now modeled as the method's parameter list, not a tolerated
+        // pseudo-invocation (TDS 5.4 Phase B)
+        Assert.Contains("Name", log.Parameters);
+        Assert.DoesNotContain(log.Invocations, i => i.Method == "param");
     }
 
     [Fact]
     public void UnbalancedBraceIsAHardError()
     {
         Assert.Throws<ParseHardError>(() => Parse("function A {\n    Get-Content x\n"));
+    }
+
+    [Fact]
+    public void ControlFlowBodiesAreStructured()
+    {
+        var model = Parse("""
+            function Save-WhenChanged {
+                if (Test-Path -Path "/tmp/x") {
+                    Remove-Item -Path "/tmp/x"
+                }
+                foreach ($f in Get-ChildItem -Path "/tmp") {
+                    Add-Content -Path "/tmp/all.log" -Value $f
+                }
+            }
+            """);
+        var method = Assert.Single(model.Types[0].Methods, m => m.Name == "Save-WhenChanged");
+        // condition and body invocations land in the enclosing method
+        var test = Assert.Single(method.Invocations, i => i.Method == "Test-Path");
+        Assert.Equal("/tmp/x", test.Args[0].Value);
+        Assert.True(test.Args[0].IsNamed("Path"));
+        Assert.Contains(method.Invocations, i => i.Method == "Remove-Item");
+        var children = Assert.Single(method.Invocations, i => i.Method == "Get-ChildItem");
+        Assert.True(children.Args[0].IsNamed("Path"));
+        var add = Assert.Single(method.Invocations, i => i.Method == "Add-Content");
+        Assert.True(add.Args[0].IsNamed("Path"));
+    }
+
+    [Fact]
+    public void ClassMembersBecomeTypedMethods()
+    {
+        var model = Parse("""
+            class RepoCache {
+                hidden [string] $Path = "/tmp/cache"
+
+                [string] Get ( [string] $Key ) {
+                    return Get-Content -Path $this.Path
+                }
+
+                [void] Clear() {
+                    Remove-Item -Path $this.Path
+                }
+            }
+            """);
+        var cls = Assert.Single(model.Types, t => t.Name == "RepoCache");
+        Assert.Equal(2, cls.Methods.Count);
+        var get = Assert.Single(cls.Methods, m => m.Name == "Get");
+        Assert.Equal("RepoCache", get.DeclaringType);
+        Assert.Contains("Key", get.Parameters);
+        Assert.Contains(get.Invocations, i => i.Method == "Get-Content");
+        var clear = Assert.Single(cls.Methods, m => m.Name == "Clear");
+        Assert.Contains(clear.Invocations, i => i.Method == "Remove-Item");
+    }
+
+    [Fact]
+    public void HereStringsDoNotBreakStatementFlow()
+    {
+        var model = Parse("""
+            function Publish-Report {
+                $tpl = @"
+                report $Name
+                "@
+                $raw = @'
+                literal $Name
+                '@
+                Write-Output -InputObject $tpl
+            }
+            """);
+        var method = Assert.Single(model.Types[0].Methods, m => m.Name == "Publish-Report");
+        // the here-string bodies are consumed opaquely; the statement flow survives
+        Assert.Single(method.Invocations, i => i.Method == "Write-Output");
+    }
+
+    [Fact]
+    public void DescribeWithTrailingParamsStillRecurses()
+    {
+        var model = Parse("""
+            Describe "Repository" -Tags "slow" {
+                It "loads config" {
+                    Get-Content -Path "/etc/app/config.json"
+                }
+            }
+            """);
+        var method = Assert.Single(model.Types[0].Methods, m => m.Name.Contains("loads config"));
+        var get = Assert.Single(method.Invocations, i => i.Method == "Get-Content");
+        Assert.Equal("/etc/app/config.json", get.Args[0].Value);
     }
 }

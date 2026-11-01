@@ -7,11 +7,10 @@ using SBOBForge.Parsing;
 namespace SBOBForge.Adapters.PowerShell;
 
 /// <summary>
-/// Pester v5 adapter (TDS 7.2, framework matrix row PowerShell; lexical
-/// parser, reduced confidence). The parser synthesizes one "ps.entry"-
+/// Pester v5 adapter (TDS 7.2, framework matrix row PowerShell; structural
+/// parser, TDS 5.4 Phase B). The parser synthesizes one "ps.entry"-
 /// attributed method per `It` block carrying the title, full describe path,
-/// and resolved state (`It -Skip` → skip). Entries from lexical parsers are
-/// marked in every downstream artifact (TDS 5.4).
+/// and resolved state (`It -Skip` → skip).
 /// </summary>
 public sealed class PesterAdapter : ITestFrameworkAdapter
 {

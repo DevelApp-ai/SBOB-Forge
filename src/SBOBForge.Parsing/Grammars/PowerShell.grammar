@@ -1,0 +1,233 @@
+Grammar: PowerShell
+TokenSplitter: Space
+FormatType: EBNF
+
+/*
+ * PowerShell 7.4 Grammar Definition
+ * Authored from scratch for Minotaur (SBOB-Forge M5 Phase B, TDS 5.4).
+ * Covers the core PowerShell 7 language surface: scripts, param blocks,
+ * functions, filters, classes, enums, using statements, pipelines with
+ * redirection, the full statement set, command invocation with named
+ * parameters (-Name value, -Switch), variables with scope/namespace
+ * qualifiers, strings (single, double with interpolation, verbatim,
+ * here-strings), casts, attributes, and comment-based help.
+ *
+ * Modeled after the Go119 grammar style: explicit whitespace/newline
+ * tokens, every referenced symbol defined.
+ */
+
+<script> ::= <statement-list>
+<statement-list> ::= <statement> (<statement-separator> <statement>?)*
+<statement-separator> ::= <newline> | ';' | <line-continuation> <newline>
+<line-continuation> ::= '`' <whitespace>?
+
+<statement> ::= <comment>
+             | <using-statement>
+             | <attribute-list> <param-block>
+             | <param-block>
+             | <function-definition>
+             | <workflow-definition>
+             | <class-definition>
+             | <enum-definition>
+             | <if-statement>
+             | <switch-statement>
+             | <foreach-statement>
+             | <for-statement>
+             | <while-statement>
+             | <do-statement>
+             | <try-statement>
+             | <pipeline-statement>
+             | <return-statement>
+             | <exit-statement>
+             | <throw-statement>
+             | <break-statement>
+             | <continue-statement>
+             | <trap-statement>
+             | <label-statement>
+
+# --- Top-level declarations ---
+
+<using-statement> ::= 'using' <whitespace> ('namespace' | 'module' | 'assembly' | 'assembly') <whitespace> <using-target>
+<using-target> ::= <qualified-name> | <assembly-name>
+<assembly-name> ::= <qualified-name> | <string-literal>
+
+<param-block> ::= 'param' <whitespace>? '(' <parameter-list>? ')'
+<parameter-list> ::= <parameter> (',' <whitespace>? <parameter>)*
+<parameter> ::= <attribute-list>? <type-literal>? <whitespace>? <variable> <whitespace>? ('=' <whitespace>? <expression>)?
+<attribute-list> ::= <attribute>+
+<attribute> ::= '[' <attribute-name> <attribute-arguments>? ']'
+<attribute-name> ::= <qualified-name>
+<attribute-arguments> ::= '(' <named-argument-list>? ')'
+<named-argument-list> ::= <named-argument> (',' <whitespace>? <named-argument>)*
+<named-argument> ::= <identifier> <whitespace>? '=' <whitespace>? <expression> | <expression>
+
+<function-definition> ::= ('function' | 'filter') <whitespace> <function-name> <whitespace>? <function-body>
+<function-name> ::= <identifier> | <qualified-name> | <command-name>
+<function-body> ::= '{' <statement-list>? '}'
+
+<workflow-definition> ::= 'workflow' <whitespace> <identifier> <whitespace>? '{' <statement-list>? '}'
+
+<class-definition> ::= <attribute-list>? 'class' <whitespace> <identifier> <whitespace>? (':' <whitespace>? <type-list>)? <whitespace>? '{' <class-member-list>? '}'
+<class-member-list> ::= <class-member> (<statement-separator> <class-member>?)*
+<class-member> ::= <attribute-list>? <class-member-modifier>* <whitespace>? (<class-method> | <class-property> | <constructor>)
+<class-member-modifier> ::= 'hidden' | 'static'
+<class-method> ::= <identifier> <whitespace>? '(' <parameter-list>? ')' <whitespace>? (':' <whitespace>? <type-literal>)? <whitespace>? '{' <statement-list>? '}'
+<class-property> ::= <type-literal>? <whitespace>? '$' <identifier> <whitespace>? ('=' <whitespace>? <expression>)?
+<constructor> ::= <identifier> <whitespace>? '(' <parameter-list>? ')' <whitespace>? '{' <statement-list>? '}'
+
+<enum-definition> ::= 'enum' <whitespace> <identifier> <whitespace>? '{' <enum-member-list>? '}'
+<enum-member-list> ::= <enum-member> (',' <whitespace>? <enum-member>?)*
+<enum-member> ::= <identifier> <whitespace>? ('=' <whitespace>? <expression>)?
+
+# --- Control flow ---
+
+<if-statement> ::= 'if' <whitespace>? '(' <pipeline-expression> ')' <statement-block> <elseif-clause>* <else-clause>?
+<elseif-clause> ::= 'elseif' <whitespace>? '(' <pipeline-expression> ')' <statement-block>
+<else-clause> ::= 'else' <statement-block>
+<statement-block> ::= <whitespace>? '{' <statement-list>? '}'
+
+<switch-statement> ::= 'switch' <switch-flag>* <whitespace>? '(' <pipeline-expression> ')' <whitespace>? '{' <switch-case>* '}'
+<switch-flag> ::= <whitespace> ('-regex' | '-wildcard' | '-exact' | '-casesensitive' | '-file' | '-parallel')
+<switch-case> ::= <switch-condition> <statement-block>
+<switch-condition> ::= <expression> | 'default' | <string-literal> | <number-literal> | <variable>
+
+<foreach-statement> ::= 'foreach' <whitespace>? '$' <identifier> <whitespace>? 'in' <whitespace>? <pipeline-expression> <statement-block>
+<for-statement> ::= 'for' <whitespace>? '(' <for-initializer>? ';' <for-condition>? ';' <for-iterator>? ')' <statement-block>
+<for-initializer> ::= <pipeline-expression>
+<for-condition> ::= <pipeline-expression>
+<for-iterator> ::= <pipeline-expression>
+<while-statement> ::= 'while' <whitespace>? '(' <pipeline-expression> ')' <statement-block>
+<do-statement> ::= 'do' <statement-block> <whitespace>? ('while' | 'until') <whitespace>? '(' <pipeline-expression> ')'
+<trap-statement> ::= 'trap' <whitespace>? (<type-literal>)? <statement-block>
+
+<try-statement> ::= 'try' <statement-block> <catch-clause>* <finally-clause>?
+<catch-clause> ::= 'catch' <whitespace>? (<catch-type-list>)? <statement-block>
+<catch-type-list> ::= <type-literal> (',' <whitespace>? <type-literal>)*
+<finally-clause> ::= 'finally' <statement-block>
+
+<return-statement> ::= 'return' <whitespace>? <pipeline-expression>?
+<exit-statement> ::= 'exit' <whitespace>? <pipeline-expression>?
+<throw-statement> ::= 'throw' <whitespace>? <pipeline-expression>?
+<break-statement> ::= 'break' <whitespace>? <label-name>?
+<continue-statement> ::= 'continue' <whitespace>? <label-name>?
+<label-statement> ::= <label-name> ':' <whitespace>? <statement>
+<label-name> ::= ':' <identifier> | <identifier>
+
+# --- Pipelines and command invocation ---
+
+<pipeline-statement> ::= <pipeline> <redirection>* <whitespace>?
+<pipeline> ::= <pipeline-element> (<pipeline-operator> <whitespace>? <pipeline-element>)*
+<pipeline-operator> ::= '|' | '&&' | '||'
+<pipeline-element> ::= <pipeline-expression> | <command-invocation>
+<pipeline-expression> ::= <expression>
+
+<command-invocation> ::= <call-operator> <whitespace>? <command-name> <command-argument>*
+                      | <command-name> <command-argument>*
+<call-operator> ::= '&' | '.' | '::'
+<command-name> ::= <bare-command-name> | <qualified-name> | <string-literal> | <variable> | '(' <pipeline> ')'
+<bare-command-name> ::= <command-identifier>
+<command-identifier> ::= <identifier> | <verb-identifier> '-' <noun-identifier>
+<verb-identifier> ::= <identifier>
+<noun-identifier> ::= <identifier>
+<command-argument> ::= <whitespace> (<named-parameter> | <parameter-argument> | <command-value>)
+<named-parameter> ::= '-' <identifier> (':' <parameter-argument>)?
+<parameter-argument> ::= <expression> | <command-value>
+<command-value> ::= <string-literal> | <number-literal> | <variable> | <bare-word>
+<bare-word> ::= <identifier> | <unquoted-word>
+<unquoted-word> ::= /[^\s"'`$;{}()<>|&]+/
+
+# --- Redirection ---
+
+<redirection> ::= <whitespace>? (<fd-number>? <redirection-operator> <whitespace>? <redirection-target>)
+<redirection-operator> ::= '>' | '>>' | '<' | '>' '&' | '2>' '&' | <merge-operator>
+<merge-operator> ::= /2>&1|1>&2|>&1|2>&2/
+<fd-number> ::= /[0-9]/
+<redirection-target> ::= <bare-word> | <string-literal> | <variable>
+
+# --- Expressions ---
+
+<expression> ::= <ternary-expression>
+<ternary-expression> ::= <binary-expression> <whitespace>? ('?' <whitespace>? <expression> <whitespace>? ':' <whitespace>? <expression>)?
+<binary-expression> ::= <unary-expression> (<whitespace>? <binary-operator> <whitespace>? <unary-expression>)*
+<binary-operator> ::= '-eq' | '-ne' | '-gt' | '-ge' | '-lt' | '-le' | '-like' | '-notlike' | '-match' | '-notmatch'
+                    | '-replace' | '-creplace' | '-split' | '-join' | '-in' | '-notin' | '-contains' | '-notcontains'
+                    | '-is' | '-isnot' | '-as' | '-band' | '-bor' | '-bxor' | '-shl' | '-shr'
+                    | '-and' | '-or' | '-xor' | '-not' | '!!' | '+=' | '-=' | '*=' | '/=' | '%=' | '..' | '??'
+                    | '+' | '-' | '*' | '/' | '%' | '=' | ',' | '??=' | '|=' | '&=' | '^='
+<unary-expression> ::= <unary-operator> <unary-expression> | <range-expression>
+<unary-operator> ::= '-' | '+' | '!' | '-not' | '-bnot' | '++' | '--' | '--%'
+<range-expression> ::= <postfix-expression> ('..' <postfix-expression>)*
+<postfix-expression> ::= <primary-expression> (<member-access> | <index-expression> | <increment-postfix>)*
+<member-access> ::= '.' <whitespace>? <member-name> | '::' <whitespace>? <member-name> | '?' '.' <whitespace>? <member-name>
+<member-name> ::= <identifier> | <command-argument-token> | <string-literal> | <number-literal> | <variable>
+<index-expression> ::= '[' <whitespace>? <expression> (',' <whitespace>? <expression>)* <whitespace>? ']'
+<increment-postfix> ::= '++' | '--'
+<primary-expression> ::= <literal>
+                      | <variable>
+                      | <sub-expression>
+                      | <array-expression>
+                      | <hash-expression>
+                      | <script-block-expression>
+                      | <type-literal-expression>
+                      | <paren-expression>
+                      | <command-invocation-expression>
+<command-invocation-expression> ::= <command-name> <whitespace>? <command-argument>*
+<paren-expression> ::= '(' <whitespace>? <expression> <whitespace>? ')'
+<sub-expression> ::= '$(' <statement-list>? ')'
+<array-expression> ::= '@(' <statement-list>? ')'
+<hash-expression> ::= '@{' <hash-entry-list>? '}'
+<hash-entry-list> ::= <hash-entry> (';' <hash-entry>?)*
+<hash-entry> ::= <hash-key> <whitespace>? '=' <whitespace>? <expression>
+<hash-key> ::= <bare-word> | <string-literal> | <identifier> | <number-literal> | <variable> | '(' <expression> ')'
+<script-block-expression> ::= '{' <statement-list>? '}'
+<type-literal-expression> ::= <type-literal> <whitespace>? <unary-expression>?
+<type-literal> ::= '[' <type-specification> ']'
+<type-specification> ::= <qualified-name> | <array-type> | <generic-type>
+<array-type> ::= <type-specification> '[' ']'
+<generic-type> ::= <qualified-name> '[' <type-specification> (',' <whitespace>? <type-specification>)* ']'
+
+# --- Literals ---
+
+<literal> ::= <string-literal> | <number-literal> | <boolean-literal> | <null-literal>
+<string-literal> ::= <single-quoted-string> | <double-quoted-string> | <verbatim-string> | <here-string>
+<single-quoted-string> ::= "'" <sq-string-body> "'"
+<sq-string-body> ::= /([^']|'')*/
+<double-quoted-string> ::= '"' <dq-string-body> '"'
+<dq-string-body> ::= <dq-string-part>*
+<dq-string-part> ::= /[^"`$]+/ | '`' /./ | <simple-variable> | <sub-expression> | '(' <expression> ')' | '$' <whitespace>?
+<verbatim-string> ::= /'[^']*'/ | /"[^"]*"/
+<here-string> ::= <here-string-double> | <here-string-single>
+<here-string-double> ::= '@"' <newline> <hs-double-body>? <newline> '"@'
+<hs-double-body> ::= <hs-double-part>*
+<hs-double-part> ::= /[^"\r\n]+/ | <newline> | '"' /[^@\r\n]*/
+<here-string-single> ::= "@'" <newline> <hs-single-body>? <newline> "'@"
+<hs-single-body> ::= <hs-single-part>*
+<hs-single-part> ::= /[^'\r\n]+/ | <newline> | "'" /[^@\r\n]*/
+<number-literal> ::= /[0-9]+/ | /[0-9]+\.[0-9]+/ | /0x[0-9a-fA-F]+/ | /[0-9]+(\.[0-9]+)?[kKmMgGtT]?b?/
+<boolean-literal> ::= '$true' | '$false'
+<null-literal> ::= '$null'
+
+# --- Variables ---
+
+<variable> ::= <simple-variable> | <braced-variable>
+<simple-variable> ::= '$' <variable-name> | '$' <special-variable> | <scoped-variable> | <namespace-variable>
+<braced-variable> ::= '${' <variable-name> '}'
+<variable-name> ::= /[_a-zA-Z][_a-zA-Z0-9]*/
+<special-variable> ::= '_' | '?' | '^' | '$' | 'args' | 'input' | 'PSItem' | 'this' | 'null' | 'true' | 'false'
+<scoped-variable> ::= '$' <scope-qualifier> ':' <variable-name>
+<scope-qualifier> ::= 'global' | 'local' | 'script' | 'private' | 'using'
+<namespace-variable> ::= '$' <namespace-qualifier> ':' <variable-name>
+<namespace-qualifier> ::= 'env' | 'function' | 'variable' | 'alias'
+
+# --- Identifiers, names, comments ---
+
+<qualified-name> ::= <identifier> ('.' <identifier>)*
+<type-list> ::= <type-literal> (',' <whitespace>? <type-literal>)*
+<identifier> ::= /[a-zA-Z_][a-zA-Z0-9_-]*/
+<command-argument-token> ::= /[a-zA-Z0-9_]+/
+<whitespace> ::= /[ \t]+/
+<newline> ::= /\r?\n/
+
+<comment> ::= <single-line-comment> | <block-comment>
+<single-line-comment> ::= /#[^\n]*/
+<block-comment> ::= /<#[^#]*(#(?!>)[^#]*)*#>/

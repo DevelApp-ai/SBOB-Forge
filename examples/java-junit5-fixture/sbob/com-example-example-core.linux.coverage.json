@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "4eac43cffdf47ebdc96b294239f79ed86329699542b086954c9a38e1f13a6609",
+  "BehaviorHash": "f26b2857cb6d07b70361ae72557c775ac91fb8f02d9bf922864d3c2684fec706",
   "FilesAnalyzed": 4,
   "TestFiles": 1,
   "TestEntries": 3,
@@ -73,6 +73,5 @@
       "TestId": "sut:com.example.core.sut.ConfigStore.resetCache",
       "Rule": ""
     }
-  ],
-  "LexicalParsers": []
+  ]
 }

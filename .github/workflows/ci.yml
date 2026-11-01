@@ -11,6 +11,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      packages: read
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +24,10 @@ jobs:
 
       - name: Restore
         shell: bash
+        env:
+          # Org decision #8: GitHub Packages reads authenticate with the org
+          # secret, falling back to GITHUB_TOKEN (packages: read).
+          NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
           set -o pipefail
           dotnet restore 2>&1 | tee restore.log

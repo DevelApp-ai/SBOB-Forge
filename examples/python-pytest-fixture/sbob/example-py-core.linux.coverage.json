@@ -1,6 +1,6 @@
 {
   "SbobIrVersion": 1,
-  "BehaviorHash": "7203c2ab15a19d01a0eff18a2863dc66db9c9c5cef6eba626927bc50f97dd375",
+  "BehaviorHash": "028962faccfd55c92fd648d3a454fa3125dbf5adc96b4ffd946a8457a5b85ca7",
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 3,
@@ -49,6 +49,5 @@
       "TestId": "sut:config_store.clean_cache",
       "Rule": ""
     }
-  ],
-  "LexicalParsers": []
+  ]
 }

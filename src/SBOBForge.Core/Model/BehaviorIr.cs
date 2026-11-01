@@ -46,9 +46,7 @@ public sealed record UnrepresentableItem(string Primitive, string File, int Line
 
 /// <summary>
 /// Honest-coverage report (TDS 8.4, 15): what was lifted, what was not, and
-/// why. `LexicalParsers` lists the reduced-confidence languages whose files
-/// were analyzed by fixed lexical scanners (TDS 5.4 Phase A) — ordinal-
-/// sorted, empty for full-grammar runs.
+/// why.
 /// </summary>
 public sealed record CoverageReport(
     IReadOnlyList<QuarantinedItem> Quarantined,
@@ -56,11 +54,8 @@ public sealed record CoverageReport(
     IReadOnlyList<UnrepresentableItem> Unrepresentable,
     int FilesAnalyzed,
     int TestFiles,
-    int TestEntries,
-    IReadOnlyList<string>? LexicalParsers = null)
+    int TestEntries)
 {
-    public IReadOnlyList<string> LexicalParserList => LexicalParsers ?? Array.Empty<string>();
-
     public static CoverageReport Empty { get; } = new(
         Array.Empty<QuarantinedItem>(), Array.Empty<NoiseItem>(),
         Array.Empty<UnrepresentableItem>(), 0, 0, 0);
