@@ -1272,3 +1272,27 @@ public static class BashCatalogLowering
     public static LoweredInvocation? Lower(
         InvocationDecl invocation,
         Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>C lowering entry point (TDS 7.3, M5).</summary>
+public static class CCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = CCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
+
+/// <summary>C++ lowering entry point (TDS 7.3, M5).</summary>
+public static class CppCatalogLowering
+{
+    public static LanguageCatalog Catalog { get; } = CppCatalog.LoadDefault();
+
+    public static LoweredInvocation? Lower(
+        InvocationDecl invocation,
+        Func<CallArg, CallArg?>? substitute = null) =>
+        CatalogLowering.Lower(Catalog.Rules, invocation, substitute);
+}
