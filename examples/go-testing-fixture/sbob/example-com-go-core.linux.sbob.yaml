@@ -7,8 +7,8 @@ metadata:
     kubescape.io/managed-by: User
     develapp.io/binding: package-purl
     develapp.io/generator: sbobforge@0.1.0
-    develapp.io/grammar-lock-sha256: 92539893b30f43b26c15f85e36872f2e95e1c6e8150bf96e51713683ee06724d
-    develapp.io/behavior-hash: 3566b8853abad09fab78c60529376d5e06ced89753f29a8e60aab6a1c4ca1608
+    develapp.io/grammar-lock-sha256: a1aa645984c43b48b5f751727c61d728f60be5375490d77cea2850d714b09293
+    develapp.io/behavior-hash: 53c1b6f7f775d9f20a6879555bde345b98b1d1061d4d6e98089a54f662d7b79e
 spec:
   architectures: [amd64]
   imageID: pkg:golang/example.com/go-core@1.0.0
