@@ -44,15 +44,23 @@ public sealed record NoiseItem(string Description, string File, int Line, string
 /// <summary>Primitives the spec v0.0.4 cannot represent (TDS 15): delete, rename, symlink, chmod.</summary>
 public sealed record UnrepresentableItem(string Primitive, string File, int Line, string TestId);
 
-/// <summary>Honest-coverage report (TDS 8.4, 15): what was lifted, what was not, and why.</summary>
+/// <summary>
+/// Honest-coverage report (TDS 8.4, 15): what was lifted, what was not, and
+/// why. `LexicalParsers` lists the reduced-confidence languages whose files
+/// were analyzed by fixed lexical scanners (TDS 5.4 Phase A) — ordinal-
+/// sorted, empty for full-grammar runs.
+/// </summary>
 public sealed record CoverageReport(
     IReadOnlyList<QuarantinedItem> Quarantined,
     IReadOnlyList<NoiseItem> Noise,
     IReadOnlyList<UnrepresentableItem> Unrepresentable,
     int FilesAnalyzed,
     int TestFiles,
-    int TestEntries)
+    int TestEntries,
+    IReadOnlyList<string>? LexicalParsers = null)
 {
+    public IReadOnlyList<string> LexicalParserList => LexicalParsers ?? Array.Empty<string>();
+
     public static CoverageReport Empty { get; } = new(
         Array.Empty<QuarantinedItem>(), Array.Empty<NoiseItem>(),
         Array.Empty<UnrepresentableItem>(), 0, 0, 0);

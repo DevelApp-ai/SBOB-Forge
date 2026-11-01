@@ -42,6 +42,10 @@ public static class CanonicalSbobEmitter
         sb.Append("    develapp.io/generator: sbobforge@").Append(Scalar(generatorVersion)).Append('\n');
         sb.Append("    develapp.io/grammar-lock-sha256: ").Append(ir.GrammarLockHash).Append('\n');
         sb.Append("    develapp.io/behavior-hash: ").Append(ir.ComputeBehaviorHash()).Append('\n');
+        // TDS 5.4 Phase A: files analyzed by fixed lexical scanners carry a reduced
+        // confidence tier; the SBOB annotation records it so consumers know.
+        if (ir.Coverage.LexicalParserList.Count > 0)
+            sb.Append("    develapp.io/parser: lexical\n");
         sb.Append("spec:\n");
         if (ir.Architectures.Count > 0)
             sb.Append("  architectures: [").Append(string.Join(", ", ir.Architectures.Select(Scalar))).Append("]\n");
