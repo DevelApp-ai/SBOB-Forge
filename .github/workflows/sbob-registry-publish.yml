@@ -1,6 +1,6 @@
 name: sbob-registry-publish
 
-# M6 pipeline (TDS 10.2, 10.3, 12): cosign signing + registry publish for a
+# M6 pipeline (TDS 10.2, 10.3, 10.5, 12): cosign signing + registry publish for a
 # package-bound SBoB. Called from a product repo's release/main workflow:
 #
 #   jobs:
@@ -10,11 +10,13 @@ name: sbob-registry-publish
 #         package-purl: pkg:nuget/develapp.minotaur@1.5.25
 #         sbob-file: sbob/develapp-minotaur.linux.sbob.yaml
 #         registry-dir: sbobs/nuget
+#         registry-repo: DevelApp-ai/Software-Bill-of-Behavior   # default; parameterize for a private-lane registry
+#         lane: public                                           # public runs the content gate; private skips it
 #       permissions:
 #         contents: read
 #         id-token: write        # cosign keyless OIDC (org decision #14)
 #       secrets:
-#         SBOB_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+#         SBOB_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }} # contents:write on the registry-repo you target
 #
 # Stages:
 #   1. drift gate — sbobforge generate --check --frozen (org decision #26):
@@ -23,15 +25,21 @@ name: sbob-registry-publish
 #      repo workflow identity (org decision #14): <file>.sig + <file>.bundle,
 #      the artifact names sbobctl's CosignVerifier expects.
 #   3. dialect conversion to the registry dialect (TDS 10.4).
-#   4. sbobctl validate + diff vs the previous released registry file at the
-#      pinned Software-Bill-of-Behavior SHA — the sbob-diff-gate ladder
-#      (fail-on mandatory); the verdict routes into the registry PR.
-#   5. registry PR adding/updating sbobs/<dir>/<name>.yaml (+ .sig/.bundle)
-#      in DevelApp-ai/Software-Bill-of-Behavior (squash-merged, org #28).
+#   4. public-lane content gate (TDS 10.5, lane: public only) — sbobforge gate:
+#      private DNS suffixes, internal (non-loopback) IP ranges, or bare
+#      single-label hostnames fail the publish BEFORE the registry PR is opened.
+#      The private lane (lane: private) skips this gate: same pipeline, same
+#      gates otherwise, only the audience changes.
+#   5. sbobctl validate + diff vs the previous released registry file at the
+#      pinned registry-repo SHA — the sbob-diff-gate ladder (fail-on mandatory);
+#      the verdict routes into the registry PR.
+#   6. registry PR adding/updating sbobs/<dir>/<name>.yaml (+ .sig/.bundle)
+#      in the target registry repo (squash-merged, org #28).
 #      The pipeline opens the PR; it never merges it.
 #
 # The SBOB_REGISTRY_TOKEN org secret needs contents write on the registry repo
-# (cross-repo PR).
+# targeted by registry-repo (cross-repo PR). For a private-lane registry, pass
+# the matching repo + a token with write on it under the same secret name.
 
 on:
   workflow_call:
@@ -57,6 +65,26 @@ on:
         description: 'Registry file base name; default derived from the sbob-file basename'
         required: false
         type: string
+      registry-repo:
+        description: 'Registry repository (owner/repo) receiving the published profile'
+        required: false
+        default: 'DevelApp-ai/Software-Bill-of-Behavior'
+        type: string
+      registry-repo-sha:
+        description: 'Pinned SHA of the registry repo to check the transpiler/diff tooling from'
+        required: false
+        default: '181783453d3e9bddc30faba5f0b9ad96a571b2d9'
+        type: string
+      lane:
+        description: 'Visibility lane: public (content gate enforced) or private (content gate skipped)'
+        required: false
+        default: 'public'
+        type: string
+      content-gate-allow:
+        description: 'Optional comma-separated --allow list for the public-lane content gate (exact host/suffix/ip)'
+        required: false
+        default: ''
+        type: string
       fail-on:
         description: 'Diff-gate verdict at which publishing stops: none | advisory | mandatory'
         required: false
@@ -69,14 +97,15 @@ on:
         type: string
     secrets:
       SBOB_REGISTRY_TOKEN:
-        description: 'Token with contents:write on DevelApp-ai/Software-Bill-of-Behavior (opens the registry PR)'
+        description: 'Token with contents:write on the registry repo named by registry-repo (opens the registry PR)'
         required: true
 
 env:
-  SBOB_REPO: DevelApp-ai/Software-Bill-of-Behavior
-  # Pinned Software-Bill-of-Behavior SHA — same pin as the ci.yml replay lane;
-  # spec/tool changes are explicit PRs (TDS 16 risk table).
-  SBOB_REPO_SHA: 181783453d3e9bddc30faba5f0b9ad96a571b2d9
+  REGISTRY_REPO: ${{ inputs.registry-repo }}
+  # Pinned registry-repo SHA — same pin as the ci.yml replay lane; spec/tool
+  # changes are explicit PRs (TDS 16 risk table).
+  REGISTRY_REPO_SHA: ${{ inputs.registry-repo-sha }}
+  LANE: ${{ inputs.lane }}
 
 jobs:
   publish:
@@ -107,11 +136,11 @@ jobs:
           ref: ${{ steps.forge-ref.outputs.ref }}
           path: sbobforge-repo
 
-      - name: Checkout Software-Bill-of-Behavior at the pinned SHA (transpiler + diff gate)
+      - name: Checkout the registry repo at the pinned SHA (transpiler + diff gate)
         uses: actions/checkout@v5
         with:
-          repository: ${{ env.SBOB_REPO }}
-          ref: ${{ env.SBOB_REPO_SHA }}
+          repository: ${{ env.REGISTRY_REPO }}
+          ref: ${{ env.REGISTRY_REPO_SHA }}
           path: sbob-repo
 
       - uses: actions/setup-dotnet@v5
@@ -195,6 +224,24 @@ jobs:
           cp "$SBOB_FILE.sig" "$REGISTRY_FILE.sig"
           cp "$SBOB_FILE.bundle" "$REGISTRY_FILE.bundle"
 
+      - name: Public-lane content gate (TDS 10.5; skipped on the private lane)
+        if: ${{ inputs.lane == 'public' }}
+        shell: bash
+        env:
+          REGISTRY_FILE: ${{ steps.paths.outputs.registry-file }}
+          ALLOW_INPUT: ${{ inputs.content-gate-allow }}
+        run: |
+          set -euo pipefail
+          allow_args=()
+          if [ -n "$ALLOW_INPUT" ]; then
+            IFS=',' read -ra parts <<< "$ALLOW_INPUT"
+            for p in "${parts[@]}"; do
+              [ -n "$p" ] && allow_args+=(--allow "$p")
+            done
+          fi
+          dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
+            gate "$REGISTRY_FILE" "${allow_args[@]}"
+
       - name: sbobctl validate + diff gate vs previous release
         shell: bash
         env:
@@ -207,7 +254,7 @@ jobs:
           node sbob-repo/src/cli.ts validate --sbob "$REGISTRY_FILE"
 
           old="/tmp/previous-$REGISTRY_NAME.yaml"
-          if gh api "repos/${{ env.SBOB_REPO }}/contents/$REGISTRY_FILE?ref=main" \
+          if gh api "repos/${{ env.REGISTRY_REPO }}/contents/$REGISTRY_FILE?ref=main" \
                --header "Authorization: Bearer $GH_REGISTRY_TOKEN" \
                --jq .content | base64 -d > "$old" 2>/dev/null && [ -s "$old" ]; then
             echo "previous release found; running the sbob-diff-gate ladder (fail-on: $FAIL_ON)"
@@ -221,12 +268,13 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/pr-body.md <<'EOF'
-          Published by the SBOB-Forge sbob-registry-publish pipeline (TDS 10.2/10.3).
+          Published by the SBOB-Forge sbob-registry-publish pipeline (TDS 10.2/10.3/10.5).
 
           - **Package:** `PACKAGE_PURL`
           - **Registry file:** `REGISTRY_FILE_PATH` (+ `.sig` / `.bundle` cosign artifacts)
+          - **Lane:** `LANE`LANE_GATE_NOTE
           - **Generated by:** sbobforge, drift-gated `--check --frozen` before signing
-          - **Diff gate:** the previous released profile was compared with the sbob-diff-gate ladder (fail-on: FAIL_ON) at pinned Software-Bill-of-Behavior SHA `PINNED_SHA`
+          - **Diff gate:** the previous released profile was compared with the sbob-diff-gate ladder (fail-on: FAIL_ON) at pinned registry-repo SHA `PINNED_SHA`
 
           **Verify the signature (cosign keyless, org decision #14):**
 
@@ -238,11 +286,18 @@ jobs:
             REGISTRY_FILE_PATH
           ```
           EOF
+          if [ "${{ inputs.lane }}" = "public" ]; then
+            gate_note=" — public-lane content gate passed (no internal infrastructure disclosure)"
+          else
+            gate_note=" — content gate skipped by design (private lane)"
+          fi
           sed -i \
             -e "s|PACKAGE_PURL|${{ inputs.package-purl }}|g" \
             -e "s|REGISTRY_FILE_PATH|${{ steps.paths.outputs.registry-file }}|g" \
+            -e "s|LANE_GATE_NOTE|$gate_note|g" \
+            -e "s|LANE|${{ inputs.lane }}|g" \
             -e "s|FAIL_ON|${{ inputs.fail-on }}|g" \
-            -e "s|PINNED_SHA|${{ env.SBOB_REPO_SHA }}|g" \
+            -e "s|PINNED_SHA|${{ env.REGISTRY_REPO_SHA }}|g" \
             /tmp/pr-body.md
 
       - name: Open the registry PR
@@ -257,14 +312,14 @@ jobs:
           version="${PURL##*@}"
           branch="sbob-registry-$reg_name-$(git log -1 --format=%h)"
 
-          gh api -X DELETE "repos/${{ env.SBOB_REPO }}/git/refs/heads/$branch" >/dev/null 2>&1 || true
-          sha="$(gh api "repos/${{ env.SBOB_REPO }}/git/ref/heads/main" --jq .object.sha)"
-          gh api -X POST "repos/${{ env.SBOB_REPO }}/git/refs" \
+          gh api -X DELETE "repos/${{ env.REGISTRY_REPO }}/git/refs/heads/$branch" >/dev/null 2>&1 || true
+          sha="$(gh api "repos/${{ env.REGISTRY_REPO }}/git/ref/heads/main" --jq .object.sha)"
+          gh api -X POST "repos/${{ env.REGISTRY_REPO }}/git/refs" \
             -f ref="refs/heads/$branch" -f sha="$sha" >/dev/null
 
           b64() { base64 -w0 "$1"; }
           put() {
-            gh api -X PUT "repos/${{ env.SBOB_REPO }}/contents/$1" \
+            gh api -X PUT "repos/${{ env.REGISTRY_REPO }}/contents/$1" \
               -f message="$2" -f content="$(b64 "$3")" -f branch="$branch" >/dev/null
           }
           put "$registry_file" "sbob: $PURL" "$registry_file"
@@ -272,7 +327,7 @@ jobs:
           put "$registry_file.bundle" "sbob: cosign keyless bundle for $PURL" "$registry_file.bundle"
 
           gh pr create \
-            --repo "${{ env.SBOB_REPO }}" \
+            --repo "${{ env.REGISTRY_REPO }}" \
             --base main \
             --head "$branch" \
             --title "sbob(${{ inputs.registry-dir }}): $reg_name $version" \
