@@ -8,3 +8,6 @@ public sealed class StrictQuarantineException(string message) : Exception(messag
 
 /// <summary>Exit code 3 (TDS 13): byte drift detected by --check (org decision #26).</summary>
 public sealed class DriftDetectedException(string message) : Exception(message);
+
+/// <summary>Exit code 6 (TDS 10.5/13): public-lane content gate violations — internal infrastructure disclosure in a profile destined for a public registry lane.</summary>
+public sealed class PublicLaneViolationException(string message) : Exception(message);

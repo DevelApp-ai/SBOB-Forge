@@ -12,7 +12,7 @@ namespace SBOBForge.Cli;
 /// <summary>
 /// sbobforge — deterministic test-suite → SBOB generator (TDS 13).
 /// Exit codes: 0 ok, 1 usage, 2 parse/validation hard error, 3 --check drift,
-/// 4 --strict quarantine, 5 --frozen lock mismatch.
+/// 4 --strict quarantine, 5 --frozen lock mismatch, 6 public-lane gate (TDS 10.5).
 /// </summary>
 public static class Program
 {
@@ -30,6 +30,7 @@ public static class Program
         catch (DriftDetectedException e) { return Fail(3, e.Message); }
         catch (StrictQuarantineException e) { return Fail(4, e.Message); }
         catch (LockMismatchException e) { return Fail(5, e.Message); }
+        catch (PublicLaneViolationException e) { return Fail(6, e.Message); }
         catch (InvalidDataException e) { return Fail(2, e.Message); }
         catch (FormatException e) { return Fail(2, e.Message); }
     }
@@ -54,6 +55,7 @@ public static class Program
                 "generate" => CmdGenerate(args[1..]),
                 "validate" => CmdValidate(args[1..]),
                 "convert" => CmdConvert(args[1..]),
+                "gate" => CmdGate(args[1..]),
                 _ => Usage($"unknown command '{command}'")
             };
         }
@@ -75,9 +77,11 @@ public static class Program
                                 [--target-os <os>] [--check] [--strict] [--frozen]
               sbobforge validate <file.sbob.yaml>
               sbobforge convert <file.sbob.yaml> <out.yaml>
+              sbobforge gate <file.sbob.yaml> [--allow <host|suffix|ip>]…
 
             exit codes: 0 ok, 1 usage, 2 parse/validation error, 3 drift (--check),
-                        4 quarantine (--strict), 5 lock mismatch (--frozen)
+                        4 quarantine (--strict), 5 lock mismatch (--frozen),
+                        6 public-lane disclosure (gate)
             """);
         return 1;
     }
@@ -427,6 +431,42 @@ public static class Program
         File.WriteAllText(outPath, converted);
         Console.WriteLine($"converted {inPath} -> {outPath} (sbob.k8sstormcenter.io/v1 / {DialectConverter.SbobKind})");
         return 0;
+    }
+
+    /// <summary>
+    /// Public-lane content gate (TDS 10.5): mechanical disclosure check over the
+    /// profile's network targets — a profile carrying private DNS suffixes,
+    /// internal (non-loopback) IP ranges, or bare single-label hostnames must not
+    /// reach a PUBLIC registry lane. Runs in sbob-registry-publish before the
+    /// registry PR is opened; overrides via --allow are reviewed decisions.
+    /// Works on either dialect (payload is identical across the TDS 10.4 bridge).
+    /// </summary>
+    private static int CmdGate(string[] args)
+    {
+        if (args.Length == 0) return Usage("missing argument for 'gate'");
+        var path = args[0];
+        if (!File.Exists(path)) return Fail(1, $"no such file: {path}");
+        var allowed = new List<string>();
+        for (var i = 1; i < args.Length; i++)
+        {
+            if (args[i] == "--allow" && i + 1 < args.Length) allowed.Add(args[++i]);
+            else return Usage($"unknown option '{args[i]}'");
+        }
+
+        var violations = Core.Validation.PublicLaneGate.Check(File.ReadAllText(path), allowed);
+        if (violations.Count == 0)
+        {
+            Console.WriteLine($"public-lane clean: no internal infrastructure disclosure in {path}");
+            return 0;
+        }
+
+        foreach (var v in violations)
+            Console.Error.WriteLine($"{v.Section}.{v.Field}: '{v.Value}' — {v.Rule}");
+        Console.Error.WriteLine(
+            $"{violations.Count} public-lane violation(s) — this profile discloses internal infrastructure and " +
+            "must not reach a public registry lane (TDS 10.5). Fix the source or review an override: " +
+            "sbobforge gate <file> --allow <host|suffix|ip>. Private-lane publication skips this gate.");
+        throw new PublicLaneViolationException($"public-lane content gate: {violations.Count} violation(s) in {path}");
     }
 
     private static string? OptionalPath(string[] args, string root)

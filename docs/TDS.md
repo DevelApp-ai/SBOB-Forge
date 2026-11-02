@@ -454,7 +454,7 @@ Enforcement (org decision #26):
 |---|---|
 | **NuGet embed** | Pack stage includes `sbob/<package>.<os>.sbob.yaml` + provenance via `<None Include="sbob\*.yaml" Pack="true" PackagePath="sbob">`; consumers and pipeline scanners can read the profile straight from the installed package |
 | **Chocolatey embed** | `choco pack` includes `tools/sbob/*.sbob.yaml`; `chocoInstall`/`chocoUninstall` scripts are **not** modified — SBOB is data, not behavior |
-| **Registry publish** | The reusable workflow `.github/workflows/sbob-registry-publish.yml` (called from the product repo's release lane) runs: drift gate (`generate --check --frozen`, #26) → cosign keyless signing (§10.2) → `sbobforge convert` to the registry dialect (§10.4) → `sbobctl diff` vs the previous released profile at the pinned Software-Bill-of-Behavior SHA (the `sbob-diff-gate` ladder, `--fail-on mandatory`) → PR adding/updating `sbobs/nuget/<name>.yaml` / `sbobs/choco/<name>.yaml` (+ `.sig`/`.bundle`) in Software-Bill-of-Behavior, squash-merged per decision #28 so behavior changes between versions show as reviewable diffs. The pipeline opens the PR; it never merges it. Cross-repo PR auth uses the `SBOB_REGISTRY_TOKEN` org secret |
+| **Registry publish** | The reusable workflow `.github/workflows/sbob-registry-publish.yml` (called from the product repo's release lane) runs: drift gate (`generate --check --frozen`, #26) → cosign keyless signing (§10.2) → `sbobforge convert` to the registry dialect (§10.4) → **public-lane content gate** (`sbobforge gate`, §10.5 — enforced when `lane: public`, skipped by design on the private lane) → `sbobctl diff` vs the previous released profile at the pinned registry-repo SHA (the `sbob-diff-gate` ladder, `--fail-on mandatory`) → PR adding/updating `sbobs/nuget/<name>.yaml` / `sbobs/choco/<name>.yaml` (+ `.sig`/`.bundle`) in the target registry repo (`registry-repo` input; squash-merged per decision #28 so behavior changes between versions show as reviewable diffs). The pipeline opens the PR; it never merges it. Cross-repo PR auth uses the `SBOB_REGISTRY_TOKEN` org secret (contents:write on the targeted registry repo) |
 | **OCI path (later)** | When a package is baked into an image, the same generator emits the image-bound profile into the image repo (`sbob/`), consumed by Kubescape node-agent; signed and stored alongside image SBOM |
 
 ### 10.4 Dialect bridge (kubescape ↔ registry dialect)
@@ -467,6 +467,44 @@ SBOB-Forge canonically emits the upstream bob-spec dialect (`spdx.softwarecompos
 - a foreign or non-canonical input fails with exit 2 (a file that is not our canonical output could hide behavior and must never be silently header-swapped).
 
 The transpiler-replay CI lane (§10.1) and the registry publish workflow (§10.3) both go through the converter, so the registry copy and the emitted profile can never diverge in content — only in header and dialect marker.
+
+### 10.5 Artifact signature model and visibility lanes
+
+Every published SBoB exists in exactly two forms, and confusing their roles is the first distribution mistake:
+
+- **The registry copy — canonical.** One file per package and target platform in the registry repo (`sbobs/nuget|choco/<name>.yaml`), carrying its **own** cosign signature and transparency bundle (§10.2). This is the copy a verifier is entitled to trust without installing anything, and the only copy the pipeline writes.
+- **The embedded copy — convenience.** The same bytes riding inside the deliverable (§10.3: nupkg `sbob/`, choco `tools/sbob/`). It carries no signature of its own because it travels inside an artifact that is already signed — tampering with the profile means breaking the host artifact's signature.
+
+This gives signing **two layers**, one identity pin:
+
+| Layer | What covers it | Where it exists |
+|---|---|---|
+| **L1 — the file's own signature** | cosign keyless `.sig` + `.bundle` on the SBoB and provenance sidecar | Always, on the registry copy (§10.2) |
+| **L2 — the host artifact's signature** | The containing artifact's signature, with the profile already embedded | Where the channel supports it: NuGet author signing, Authenticode, image signing |
+
+**The ordering rule that makes either layer honest: gate, then embed, then sign.** The release pipeline must run `build → drift gate (§10.1, `--check --frozen`) → embed the verified bytes → sign the host artifact`. Embedding after signing covers nothing; signing before gating attests the wrong behavior with perfect cryptography (`generate --check` therefore precedes signing in the publish workflow). The executable channel is the strongest available form — one Authenticode signature covers both the behavior and its declaration — and it is the one ordering constraint the pipeline imposes. When no code-signing identity exists yet, the honest fallback is a **sidecar file** (`<exe>.sbob.yaml`) verified against the registry copy, not an unsigned embedded blob nobody can check.
+
+L1 verification is **host-independent by construction**: `cosign verify-blob` with the certificate-identity pin (`^https://github.com/DevelApp-ai/` + the GitHub OIDC issuer) verifies any copy of the file no matter who serves it. The trust anchor is the sigstore roots plus the org identity pin — not GitHub, not the repo's visibility setting, not the fetch URL. A copy staged in an air-gapped verifier checks identically because the transparency-log evidence travels in the `.bundle`.
+
+**Visibility lanes follow what the attacker already has.** An SBoB is reconnaissance material (egress destinations, ports, file paths, child argv), so publication is a lane decision, not a default:
+
+| Software | Lane | Reasoning |
+|---|---|---|
+| Open-source package | **public** | The source is already public; the declaration leaks nothing and publishing it is the trust feature |
+| Distributed commercial (licensees get the binary) | **public** or customer-gated | The attacker already has the artifact; behavior is the easy half of reverse engineering (`strings` + procmon + pcap recover it in an afternoon), while defenders gain an enforceable detection capability |
+| Server-side / SaaS (nobody gets the binary) | **private, always** | Internal topology is not otherwise observable — the one case obscurity has real value |
+
+The private lane is not a degraded pipeline: the same drift gate, signing, conversion, and diff gate run; only the audience changes. The `sbob-registry-publish` workflow is parameterized accordingly (`registry-repo`, `registry-repo-sha`, `lane` inputs; the token with write access is passed under the `SBOB_REGISTRY_TOKEN` secret for whichever registry repo is targeted).
+
+**The public-lane content gate is a pipeline control, not review discipline.** Profiles are generated from test suites, and test code legitimately references internal hostnames; a lint that runs at publish time must catch the leak before it reaches a public registry. `sbobforge gate <file>` (§13, exit code 6) mechanically scans the profile's network targets (`dnsNames` / `ipAddresses` under `ingress` / `egress`) and fails the publish when it finds:
+
+- **private DNS suffixes** (`.internal`, `.intranet`, `.corp`, `.lan`, `.local`, `.private`, `.home`, `.localdomain`);
+- **internal IP ranges**: RFC1918 (10/8, 172.16/12, 192.168/16), link-local (169.254/16, fe80::/10), unique-local IPv6 (fc00::/7), CGNAT (100.64/10);
+- **bare single-label hostnames** (internal service names like `db`).
+
+Loopback (`localhost`, 127.0.0.0/8, `::1`) is deliberately allowed: every test suite dials loopback fixtures and loopback reveals no estate topology — forbidding it would turn the gate into noise. Overrides exist and are explicit: `--allow <exact-host|dot-suffix|exact-ip>` (workflow input `content-gate-allow`), each one a reviewed decision visible in the calling workflow. The gate runs in the publish pipeline only on `lane: public`; the private lane skips it by design.
+
+**Honest limits of the gate:** it is a lint, not a proof. Catching a private DNS suffix is mechanical; catching an internal hostname that happens to look public, or a test fixture that encodes infrastructure layout in a path, is not. First-of-lane publications still deserve a human eye on the profile diff — which the registry PR (§10.3) provides by construction.
 
 ---
 
@@ -518,11 +556,13 @@ sbobforge generate [--check] [--frozen] [--strict]
                    [--target-os linux|windows|all] [--image <ref@digest>]
 sbobforge validate <file…>                 # schema + self-lint + purl check
 sbobforge convert <file.sbob.yaml> <out>   # dialect bridge: registry dialect (TDS 10.4)
+sbobforge gate <file.sbob.yaml> [--allow <host|suffix|ip>]…
+                                           # public-lane content gate (TDS 10.5)
 sbobforge explain <path-or-entry>          # provenance lookup
 sbobforge version                         # tool + IR + catalog versions
 ```
 
-Exit codes: `0` ok · `2` parse/validation hard error · `3` drift detected (`--check`) · `4` quarantine non-empty (`--strict`) · `5` lock mismatch (`--frozen`).
+Exit codes: `0` ok · `2` parse/validation hard error · `3` drift detected (`--check`) · `4` quarantine non-empty (`--strict`) · `5` lock mismatch (`--frozen`) · `6` public-lane disclosure (`gate`, TDS 10.5).
 
 ---
 
