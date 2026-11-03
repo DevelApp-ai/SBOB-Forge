@@ -438,7 +438,11 @@ public static class GeneratePipeline
     private static CodeModel ParseOrQuarantine(
         ICodeModelParser parser, string root, string file, HashSet<string> allowed, List<string> parseErrors)
     {
-        var text = File.ReadAllText(Path.Combine(root, file));
+        // Platform byte-identity (TDS 9): captured syntax text (receiver
+        // chains, argument expressions) must not carry the checkout's line
+        // endings — a CRLF checkout (git autocrlf on windows) leaks CR bytes
+        // into coverage descriptions otherwise. Parsers see LF-only source.
+        var text = CanonicalText.LfOnly(File.ReadAllText(Path.Combine(root, file)));
         try
         {
             return parser.Parse(file, text);

@@ -81,6 +81,47 @@ public class CanonicalTextTests
         Assert.DoesNotContain('\r', result.CoverageJson);
     }
 
+    [Fact]
+    public void CrLfSourceCheckoutDoesNotLeakCrIntoCapturedText()
+    {
+        // Second platform-determinism family in the emitted-artifacts chain,
+        // found via the Minotaur choco-lane windows drift gate: the runner
+        // checks the product out with CRLF (git autocrlf), Roslyn preserves
+        // those line endings in captured expression text, and the receiver
+        // chain of a multi-line invocation leaked an escaped CR into
+        // coverage.json descriptions (committed 1,032,499 vs regenerated
+        // 1,032,505 bytes — exactly the escaped CRs). Source text is
+        // normalized to LF before parsing.
+        using var temp = new TempDir(CopyFixtureToTemp());
+        File.WriteAllText(
+            Path.Combine(temp.Path, "tests", "HarnessCrLfTests.cs"),
+            "using Xunit;\n" +
+            "\n" +
+            "public class HarnessCrLfTests\n" +
+            "{\n" +
+            "    [Fact]\n" +
+            "    public void MultiLineReceiverHarnessCall()\n" +
+            "    {\n" +
+            "        document.RootElement.GetProperty(\"runs\")[0]\r\n" +
+            "            .GetProperty(\"results\")[0].GetProperty(\"cases\");\n" +
+            "    }\n" +
+            "}\n");
+        var result = GeneratePipeline.Run(new GenerationOptions
+        {
+            RepoRoot = temp.Path,
+            ConfigPath = Path.Combine(temp.Path, "sbobforge.json"),
+            LockPath = Path.Combine(temp.Path, "sbobforge.lock.json"),
+            GeneratorVersion = Program.Version
+        });
+        // The multi-line harness receiver was captured as noise (not dropped):
+        // the test would be vacuous if the description never made it into the
+        // coverage report.
+        Assert.Contains("harness API", result.CoverageJson);
+        // No escaped CR from the CRLF checkout — and no raw CR either.
+        Assert.DoesNotContain("\\r", result.CoverageJson);
+        Assert.DoesNotContain('\r', result.CoverageJson);
+    }
+
     private static string CopyFixtureToTemp(string fixtureName = "dotnet-xunit-fixture")
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
