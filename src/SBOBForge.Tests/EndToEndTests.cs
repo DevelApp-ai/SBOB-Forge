@@ -106,6 +106,61 @@ public class EndToEndTests
     }
 
     [Fact]
+    public void CrlfCheckoutEmitsByteIdenticalArtifacts()
+    {
+        // TDS 9 byte-identity, the family after #31 (Minotaur choco lane, PR #152):
+        // the .gitattributes -text rules protect the committed artifacts, but a
+        // Windows autocrlf checkout still hands the parsers CRLF *source* files,
+        // and a multi-line receiver captured into a harness-API noise Description
+        // carried "\r\n" into coverage.json — as a JSON-escaped pair, which the
+        // emit-side CanonicalText.LfOnly cannot see. Parse input is normalized at
+        // the read choke point, so a CRLF checkout of the very same tree must
+        // emit byte-identical artifacts. The synthetic file reproduces the
+        // Minotaur case: an enabled [Fact] whose harness invocation receiver
+        // spans a line break (Roslyn renders the receiver verbatim, line break
+        // included). This test fails on the pre-fix code on every platform.
+        const string harnessSource = """
+            using System.Text.Json;
+            using Xunit;
+
+            namespace Example.Core.Tests;
+
+            public sealed class HarnessReceiverTests
+            {
+                [Fact]
+                public void ParsesRunWithMultilineReceiver()
+                {
+                    using var document = JsonDocument.Parse("{}");
+                    _ = document.RootElement.GetProperty("runs")[0]
+                        .GetProperty("results")[0].GetProperty("summary");
+                }
+            }
+            """;
+
+        using var lf = new TempDir(CopyFixtureToTemp());
+        using var crlf = new TempDir(CopyFixtureToTemp());
+        foreach (var file in Directory.EnumerateFiles(crlf.Path, "*.cs", SearchOption.AllDirectories))
+            File.WriteAllText(file, File.ReadAllText(file).Replace("\n", "\r\n"));
+        File.WriteAllText(Path.Combine(lf.Path, "tests", "HarnessReceiverTests.cs"), harnessSource);
+        File.WriteAllText(Path.Combine(crlf.Path, "tests", "HarnessReceiverTests.cs"),
+            harnessSource.Replace("\n", "\r\n"));
+
+        var lfResult = Generate(lf.Path);
+        var crlfResult = Generate(crlf.Path);
+        Assert.Equal(lfResult.SbobYaml, crlfResult.SbobYaml);
+        Assert.Equal(lfResult.ProvenanceJsonl, crlfResult.ProvenanceJsonl);
+        Assert.Equal(lfResult.CoverageJson, crlfResult.CoverageJson);
+        Assert.Equal(lfResult.Ir.ComputeBehaviorHash(), crlfResult.Ir.ComputeBehaviorHash());
+
+        // and the multi-line receiver noise row is actually there — otherwise
+        // the equality above is vacuous
+        Assert.Contains(lfResult.Ir.Coverage.Noise, n =>
+            n.Description.Contains("GetProperty(\"runs\")[0]") && n.Description.Contains('\n'));
+        Assert.DoesNotContain('\r', lfResult.CoverageJson);
+        Assert.DoesNotContain('\r', crlfResult.CoverageJson);
+    }
+
+    [Fact]
     public void CommittedGoldenDoesNotDrift()
     {
         var repo = FindRepoRoot();

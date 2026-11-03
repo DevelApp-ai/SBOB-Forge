@@ -438,10 +438,16 @@ public static class GeneratePipeline
     private static CodeModel ParseOrQuarantine(
         ICodeModelParser parser, string root, string file, HashSet<string> allowed, List<string> parseErrors)
     {
-        // Platform byte-identity (TDS 9): captured syntax text (receiver
-        // chains, argument expressions) must not carry the checkout's line
-        // endings — a CRLF checkout (git autocrlf on windows) leaks CR bytes
-        // into coverage descriptions otherwise. Parsers see LF-only source.
+        // TDS 9 byte-identity, the family after #31: parsed source is the one
+        // input the .gitattributes -text rules do NOT protect (they cover the
+        // committed artifacts, not the .cs/.py/... trees a Windows checkout
+        // hands the parsers with autocrlf line endings). Captured source
+        // text — e.g. a multi-line receiver rendered into a harness-API
+        // noise Description — then carries "\r\n" into coverage.json as an
+        // escaped pair, which emit-side LF normalization cannot see (the CR
+        // is already a two-character JSON escape, not a raw byte). Normalize
+        // at the single parse-input choke point: every language, every
+        // captured snippet. A no-op on Unix, so no committed golden moves.
         var text = CanonicalText.LfOnly(File.ReadAllText(Path.Combine(root, file)));
         try
         {
