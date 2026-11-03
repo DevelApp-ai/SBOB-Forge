@@ -315,13 +315,15 @@ public static class Program
 
         foreach (var file in Core.Discovery.FileDiscovery.Enumerate(root, config.SutGlobs))
         {
-            var model = ParserFor(file).Parse(file, File.ReadAllText(Path.Combine(root, file)));
+            // Same parse-input LF normalization as the generate pipeline: scan
+            // output must be platform-stable too (TDS 9 — see ParseOrQuarantine).
+            var model = ParserFor(file).Parse(file, CanonicalText.LfOnly(File.ReadAllText(Path.Combine(root, file))));
             var methods = model.Types.Count == 0 ? 0 : model.AllMethods.Count();
             Console.WriteLine($"sut   {file} ({model.Types.Count} types, {methods} methods)");
         }
         foreach (var file in Core.Discovery.FileDiscovery.Enumerate(root, config.TestGlobs))
         {
-            var model = ParserFor(file).Parse(file, File.ReadAllText(Path.Combine(root, file)));
+            var model = ParserFor(file).Parse(file, CanonicalText.LfOnly(File.ReadAllText(Path.Combine(root, file))));
             var entries = RegistryFor(file)(model);
             Console.WriteLine($"test  {file} {entries.Count} entries");
             foreach (var e in entries)
