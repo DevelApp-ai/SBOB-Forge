@@ -1,11 +1,12 @@
-# TDS 9 (determinism, no host-dependent behavior): the grammar artifacts
-# embedded into SBOBForge.Parsing must check out byte-identical on every
-# platform. git's autocrlf rewrites line endings on Windows checkouts, which
-# changes the embedded resource, breaks the frozen grammar-lock sha256 pins,
-# and — because emitted profiles embed the whole-lock hash
+# TDS 9 (determinism, no host-dependent behavior): artifacts embedded into
+# the assemblies and pinned by the frozen grammar lock must check out
+# byte-identical on every platform. git's autocrlf rewrites line endings on
+# Windows checkouts, which changes the embedded resources, breaks the frozen
+# sha256 pins, and — because emitted profiles embed the whole-lock hash
 # (develapp.io/grammar-lock-sha256) — breaks cross-platform drift gates.
 # Found dogfooding the Minotaur choco lane (windows runner, Minotaur PR #152):
-# the lock pinned the LF checkout hash while the CRLF working-tree file
-# hashed differently (exit 5). Treat grammar artifacts as binary: no
-# conversion, ever.
+# the lock pinned the LF checkout hashes while the CRLF working-tree files
+# hashed differently (exit 5 — first the powershell grammar, then the dotnet
+# catalog). Treat lock-pinned artifacts as binary: no conversion, ever.
 *.grammar -text
+src/SBOBForge.Catalog/catalog/*.json -text
