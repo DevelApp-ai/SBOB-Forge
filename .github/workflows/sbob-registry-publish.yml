@@ -10,7 +10,10 @@ name: sbob-registry-publish
 #         package-purl: pkg:nuget/develapp.minotaur@1.5.25
 #         sbob-file: sbob/develapp-minotaur.linux.sbob.yaml
 #         registry-dir: sbobs/nuget
-#         registry-repo: DevelApp-ai/Software-Bill-of-Behavior   # default; parameterize for a private-lane registry
+#         registry-repo: DevelApp-ai/SBOB-Registry                # default: PUBLIC registry (org decision #40)
+#         # private/internal product instead:
+#         #   registry-repo: DevelApp-ai/DevelApp-Repo-Global    # PRIVATE registry, lane: private,
+#         #   secrets: SBOB_REGISTRY_TOKEN: ${{ secrets.SBOB_PRIVATE_REGISTRY_TOKEN }}
 #         lane: public                                           # public runs the content gate; private skips it
 #       permissions:
 #         contents: read
@@ -30,16 +33,22 @@ name: sbob-registry-publish
 #      single-label hostnames fail the publish BEFORE the registry PR is opened.
 #      The private lane (lane: private) skips this gate: same pipeline, same
 #      gates otherwise, only the audience changes.
-#   5. sbobctl validate + diff vs the previous released registry file at the
-#      pinned registry-repo SHA — the sbob-diff-gate ladder (fail-on mandatory);
+#   5. sbobctl validate + diff vs the previous released registry file, with
+#      the tooling checked out from the pinned tooling-repo SHA — the sbob-diff-gate ladder (fail-on mandatory);
 #      the verdict routes into the registry PR.
 #   6. registry PR adding/updating sbobs/<dir>/<name>.yaml (+ .sig/.bundle)
 #      in the target registry repo (squash-merged, org #28).
 #      The pipeline opens the PR; it never merges it.
 #
-# The SBOB_REGISTRY_TOKEN org secret needs contents write on the registry repo
-# targeted by registry-repo (cross-repo PR). For a private-lane registry, pass
-# the matching repo + a token with write on it under the same secret name.
+# Registry layout (org decision #40): the PUBLIC registry is
+# DevelApp-ai/SBOB-Registry (org secret SBOB_REGISTRY_TOKEN); the PRIVATE /
+# internal registry is DevelApp-ai/DevelApp-Repo-Global (org secret
+# SBOB_PRIVATE_REGISTRY_TOKEN). The token passed in must carry
+# contents:write on exactly the registry-repo targeted (a cross-repo PR —
+# the calling repo's github.token can never open it; no fallback, by
+# design). The sbobctl tooling (validate/diff) is checked out from the
+# pinned tooling-repo (Software-Bill-of-Behavior) independently of the
+# registry target.
 
 on:
   workflow_call:
@@ -66,12 +75,17 @@ on:
         required: false
         type: string
       registry-repo:
-        description: 'Registry repository (owner/repo) receiving the published profile'
+        description: 'Registry repository (owner/repo) receiving the published profile (org decision #40: SBOB-Registry public, DevelApp-Repo-Global private/internal)'
+        required: false
+        default: 'DevelApp-ai/SBOB-Registry'
+        type: string
+      tooling-repo:
+        description: 'sbobctl tooling repository (owner/repo): validate/diff tooling is checked out from here, SHA-pinned'
         required: false
         default: 'DevelApp-ai/Software-Bill-of-Behavior'
         type: string
-      registry-repo-sha:
-        description: 'Pinned SHA of the registry repo to check the transpiler/diff tooling from'
+      tooling-repo-sha:
+        description: 'Pinned SHA of the sbobctl tooling repo (tooling-repo) to check the validate/diff tooling from'
         required: false
         default: '181783453d3e9bddc30faba5f0b9ad96a571b2d9'
         type: string
@@ -106,10 +120,14 @@ on:
         required: true
 
 env:
+  # Registry PR target (org decision #40). The token must carry
+  # contents:write on exactly this repo — no github.token fallback.
   REGISTRY_REPO: ${{ inputs.registry-repo }}
-  # Pinned registry-repo SHA — same pin as the ci.yml replay lane; spec/tool
-  # changes are explicit PRs (TDS 16 risk table).
-  REGISTRY_REPO_SHA: ${{ inputs.registry-repo-sha }}
+  # sbobctl tooling (validate/diff) is checked out from the pinned tooling
+  # repo — same pin as the ci.yml replay lane; spec/tool changes are
+  # explicit PRs (TDS 16 risk table).
+  TOOLING_REPO: ${{ inputs.tooling-repo }}
+  TOOLING_REPO_SHA: ${{ inputs.tooling-repo-sha }}
   LANE: ${{ inputs.lane }}
 
 jobs:
@@ -141,11 +159,11 @@ jobs:
           ref: ${{ steps.forge-ref.outputs.ref }}
           path: sbobforge-repo
 
-      - name: Checkout the registry repo at the pinned SHA (transpiler + diff gate)
+      - name: Checkout the sbobctl tooling repo at the pinned SHA (validate + diff gate)
         uses: actions/checkout@v5
         with:
-          repository: ${{ env.REGISTRY_REPO }}
-          ref: ${{ env.REGISTRY_REPO_SHA }}
+          repository: ${{ env.TOOLING_REPO }}
+          ref: ${{ env.TOOLING_REPO_SHA }}
           path: sbob-repo
 
       - uses: actions/setup-dotnet@v5
@@ -279,7 +297,7 @@ jobs:
           - **Registry file:** `REGISTRY_FILE_PATH` (+ `.sig` / `.bundle` cosign artifacts)
           - **Lane:** `LANE`LANE_GATE_NOTE
           - **Generated by:** sbobforge, drift-gated `--check --frozen` before signing
-          - **Diff gate:** the previous released profile was compared with the sbob-diff-gate ladder (fail-on: FAIL_ON) at pinned registry-repo SHA `PINNED_SHA`
+          - **Diff gate:** the previous released profile was compared with the sbob-diff-gate ladder (fail-on: FAIL_ON) at pinned tooling-repo SHA `PINNED_SHA`
 
           **Verify the signature (cosign keyless, org decision #14):**
 
@@ -302,7 +320,7 @@ jobs:
             -e "s|LANE_GATE_NOTE|$gate_note|g" \
             -e "s|LANE|${{ inputs.lane }}|g" \
             -e "s|FAIL_ON|${{ inputs.fail-on }}|g" \
-            -e "s|PINNED_SHA|${{ env.REGISTRY_REPO_SHA }}|g" \
+            -e "s|PINNED_SHA|${{ env.TOOLING_REPO_SHA }}|g" \
             /tmp/pr-body.md
 
       - name: Open the registry PR
