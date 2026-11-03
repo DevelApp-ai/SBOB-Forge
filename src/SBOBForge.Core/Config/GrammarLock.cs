@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SBOBForge.Core.Emit;
 
 namespace SBOBForge.Core.Config;
 
@@ -36,10 +35,11 @@ public sealed class GrammarLock
     public void Save(string path)
     {
         CanonicalizeKeyOrder();
-        // TDS 9 (platform byte-identity): the indented string serializer's
-        // line separator is Environment.NewLine — normalize so the committed
-        // lock is LF on every platform (org decision #26).
-        File.WriteAllText(path, CanonicalText.LfOnly(JsonSerializer.Serialize(this, Json.Options)));
+        // TDS 9: the lock file is committed and regenerated on mixed platforms
+        // (`lock --update` runs in the Minotaur PR lane); strip the writer's
+        // platform newline so a Windows regeneration cannot flip it to CRLF
+        // (same family as the coverage emit — see GeneratePipeline.EmitCoverage).
+        File.WriteAllText(path, JsonSerializer.Serialize(this, Json.Options).Replace("\r", ""));
     }
 
     /// <summary>Content-derived lock identity (annotation develapp.io/grammar-lock-sha256, TDS 8.2).</summary>

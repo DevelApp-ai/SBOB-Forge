@@ -106,6 +106,25 @@ public class EndToEndTests
     }
 
     [Fact]
+    public void EmittedArtifactsAreLfOnlyOnEveryPlatform()
+    {
+        // TDS 9 byte-identity, third family (after #25's grammars and #26's catalogs):
+        // System.Text.Json's WriteIndented writer emits Environment.NewLine between
+        // tokens — "\r\n" on Windows — so the coverage sidecar (and any lock file
+        // saved by `lock --update`) was byte-different per platform and failed the
+        // windows drift gate against the ubuntu-committed profile (Minotaur choco
+        // lane, PR #152). EmitProvenance has always stripped "\r"; EmitCoverage and
+        // GrammarLock.Save normalize the same way. On Linux this is a no-op, so the
+        // committed goldens never move; on Windows it is the difference between a
+        // drifting and a passing lane.
+        using var temp = new TempDir(CopyFixtureToTemp());
+        var result = Generate(temp.Path);
+        Assert.DoesNotContain('\r', result.SbobYaml);
+        Assert.DoesNotContain('\r', result.ProvenanceJsonl);
+        Assert.DoesNotContain('\r', result.CoverageJson);
+    }
+
+    [Fact]
     public void CommittedGoldenDoesNotDrift()
     {
         var repo = FindRepoRoot();

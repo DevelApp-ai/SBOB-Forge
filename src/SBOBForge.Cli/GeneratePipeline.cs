@@ -495,14 +495,22 @@ public static class GeneratePipeline
         return sb.ToString();
     }
 
-    private static string EmitCoverage(BehaviorIr ir) => CanonicalText.LfOnly(JsonSerializer.Serialize(new CoverageDocument(
+    // TDS 9 byte-identity, third family (after #25's grammars and #26's catalogs,
+    // both found on the same Minotaur choco lane): System.Text.Json's WriteIndented
+    // writer emits Environment.NewLine between tokens — "\r\n" on Windows, "\n" on
+    // Linux — so the coverage sidecar was byte-different per platform and failed the
+    // windows drift gate against the ubuntu-committed file (+1 byte per line).
+    // EmitProvenance has always stripped "\r"; the coverage emit normalizes the
+    // same way. A no-op on Linux, so no committed golden or profile changes.
+    private static string EmitCoverage(BehaviorIr ir) => JsonSerializer.Serialize(new CoverageDocument(
         ir.IrVersion, ir.ComputeBehaviorHash(),
         ir.Coverage.FilesAnalyzed, ir.Coverage.TestFiles, ir.Coverage.TestEntries,
         ir.Coverage.Quarantined.Select(q => new CoverageRow(
             q.Primitive.ToString(), q.Reason, q.File, q.Line, q.TestId, q.CatalogRuleId)).ToArray(),
         ir.Coverage.Noise.Select(n => new NoiseRow(n.Description, n.File, n.Line, n.TestId)).ToArray(),
         ir.Coverage.Unrepresentable.Select(u => new CoverageRow(
-            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options)) + "\n";
+            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options)
+        .Replace("\r", "") + "\n";
 
     public static string RoslynVersion() =>
         typeof(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
