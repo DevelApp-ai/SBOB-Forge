@@ -17,9 +17,11 @@ name: sbob-registry-publish
 #         lane: public                                           # public runs the content gate; private skips it
 #       permissions:
 #         contents: read
+#         packages: read    # substrate restore via the #8 fallback token
 #         id-token: write        # cosign keyless OIDC (org decision #14)
 #       secrets:
 #         SBOB_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }} # contents:write on the registry-repo you target
+#         PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }} # org secret #8 — forward it, or the substrate restore falls back to github.token
 #
 # Stages:
 #   1. drift gate — sbobforge generate --check --frozen (org decision #26):
@@ -118,6 +120,9 @@ on:
       SBOB_REGISTRY_TOKEN:
         description: 'Token with contents:write on the registry repo named by registry-repo (opens the registry PR)'
         required: true
+      PACKAGES_READ_TOKEN:
+        description: 'GitHub Packages read token for the sbobforge substrate restore (org decision #8); optional — when not forwarded the restore falls back to github.token'
+        required: false
 
 env:
   # Registry PR target (org decision #40). The token must carry
@@ -135,6 +140,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # GitHub Packages restore of the sbobforge substrate (org decision #8).
+      # A called workflow can keep or REDUCE the caller's GITHUB_TOKEN
+      # permissions, never raise them: with only contents/id-token here the
+      # caller's packages: read grant was dropped, so the github.token
+      # fallback 403'd (NU1301) on every 2026-11-03 dispatch. Keep this scope
+      # in sync with the calling jobs' permissions blocks.
+      packages: read
       id-token: write   # cosign keyless OIDC (org decision #14)
     steps:
       # The default checkout in a reusable workflow is the CALLING (product) repo.
@@ -194,6 +206,12 @@ jobs:
         working-directory: sbobforge-repo
         shell: bash
         env:
+          # Org decision #8 fallback. In a reusable workflow the caller's
+          # PACKAGES_READ_TOKEN is only visible when the caller forwards it
+          # via its secrets: mapping — otherwise this expression silently
+          # falls to github.token, which needs both packages: read in this
+          # job's permissions and the calling repo granted access to the
+          # package. Callers that have the org secret should forward it.
           NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
           set -euo pipefail
