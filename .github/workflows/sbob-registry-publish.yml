@@ -95,6 +95,11 @@ on:
         required: false
         default: ''
         type: string
+      sbob-config:
+        description: 'sbobforge config the profile is generated from (repo-relative path); the drift gate runs against it'
+        required: false
+        default: 'sbobforge.json'
+        type: string
     secrets:
       SBOB_REGISTRY_TOKEN:
         description: 'Token with contents:write on the registry repo named by registry-repo (opens the registry PR)'
@@ -182,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
-            generate . --check --frozen
+            generate . --check --frozen --config "${{ inputs.sbob-config }}"
           # The committed profile must be bound to the requested purl.
           dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
             validate "${{ steps.paths.outputs.sbob-file }}"
