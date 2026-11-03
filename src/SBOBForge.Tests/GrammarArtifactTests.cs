@@ -13,7 +13,8 @@ namespace SBOBForge.Tests;
 /// frozen lock check and cross-platform drift gates. Found dogfooding the
 /// Minotaur choco lane (windows runner: autocrlf CRLF checkout vs the
 /// LF-committed bytes). <c>.gitattributes</c> marks them <c>-text</c>;
-/// this test fails any PR that reintroduces a carriage return.
+/// these tests fail any PR that reintroduces a carriage return or an
+/// embed/checkout divergence.
 /// </summary>
 public class GrammarArtifactTests
 {
@@ -28,13 +29,12 @@ public class GrammarArtifactTests
     public static IEnumerable<object[]> GrammarArtifacts()
     {
         var dir = Path.Combine(FindRepoRoot(), "src", "SBOBForge.Parsing", "Grammars");
-        return Directory.EnumerateFiles(dir, "*.grammar")
-            .Select(p => new object[] { Path.GetFileName(p), p });
+        return Directory.EnumerateFiles(dir, "*.grammar").Select(p => new object[] { p });
     }
 
     [Theory]
     [MemberData(nameof(GrammarArtifacts))]
-    public void GrammarArtifactsAreLfOnly(string name, string path)
+    public void GrammarArtifactsAreLfOnly(string path)
     {
         var bytes = File.ReadAllBytes(path);
         Assert.DoesNotContain((byte)'\r', bytes);
@@ -42,16 +42,15 @@ public class GrammarArtifactTests
 
     [Theory]
     [MemberData(nameof(GrammarArtifacts))]
-    public void EmbeddedGrammarHashMatchesCommittedFile(string name, string path)
+    public void EmbeddedGrammarHashMatchesCommittedFile(string path)
     {
         // The embedded resource must be byte-identical to the committed file:
         // same bytes in the working tree, same bytes in the assembly, same
         // sha256 in the frozen lock — on every platform.
         var committed = File.ReadAllBytes(path);
-        using var stream = new MemoryStream(committed);
         using var sha = System.Security.Cryptography.SHA256.Create();
-        var fileHash = System.BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
-        var embeddedHash = name == "PowerShell.grammar"
+        var fileHash = System.Convert.ToHexString(sha.ComputeHash(committed)).ToLowerInvariant();
+        var embeddedHash = Path.GetFileName(path) == "PowerShell.grammar"
             ? SBOBForge.Parsing.PowerShellSourceParser.GrammarSha256
             : SBOBForge.Parsing.BashSourceParser.GrammarSha256;
         Assert.Equal(fileHash, embeddedHash);
