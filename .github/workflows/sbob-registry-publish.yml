@@ -40,7 +40,10 @@ name: sbob-registry-publish
 #      the verdict routes into the registry PR.
 #   6. registry PR adding/updating sbobs/<dir>/<name>.yaml (+ .sig/.bundle)
 #      in the target registry repo (squash-merged, org #28).
-#      The pipeline opens the PR; it never merges it.
+#      The pipeline opens the PR; it never merges it. The PR base and the
+#      previous-release ref are the registry repo DEFAULT BRANCH (resolved at
+#      runtime: main on SBOB-Registry, master on DevelApp-Repo-Global), and
+#      an empty forwarded registry token fails closed before any signing.
 #
 # Registry layout (org decision #40): the PUBLIC registry is
 # DevelApp-ai/SBOB-Registry (org secret SBOB_REGISTRY_TOKEN); the PRIVATE /
@@ -202,6 +205,40 @@ jobs:
           echo "registry-name=$name" >> "$GITHUB_OUTPUT"
           echo "registry-file=${{ inputs.registry-dir }}/$name.yaml" >> "$GITHUB_OUTPUT"
 
+      - name: Fail closed on a missing registry token
+        shell: bash
+        env:
+          GH_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Fail closed, up front: the 2026-11-03 v1.5.27 dispatch reached
+          # the registry PR step with an EMPTY forwarded token — gh exited 4
+          # ("set the GH_TOKEN environment variable"), and the validate step
+          # gh api fallback had silently reported "no previous release",
+          # SKIPPING the sbobctl diff gate. Refuse to publish instead of
+          # degrading: the caller must forward a visible registry token (org
+          # decision #40 — org secret visible to the CALLING repo). No
+          # github.token fallback, by design (the registry PR is cross-repo;
+          # the calling repo token can never open it).
+          if [ -z "$GH_REGISTRY_TOKEN" ]; then
+            echo "SBOB_REGISTRY_TOKEN is empty — no visible registry token was forwarded."
+            exit 2
+          fi
+      - name: Resolve the registry default branch
+        id: reg-base
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Never hardcode the default branch: the public registry
+          # (SBOB-Registry) uses main; the private registry
+          # (DevelApp-Repo-Global, org decision #40) uses master. Resolve it
+          # once here — the previous-release fetch and the registry PR base
+          # below both use this output.
+          base="$(gh api "repos/${{ env.REGISTRY_REPO }}" --jq .default_branch)"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "registry default branch: $base"
       - name: Restore + build sbobforge
         working-directory: sbobforge-repo
         shell: bash
@@ -295,7 +332,7 @@ jobs:
           node sbob-repo/src/cli.ts validate --sbob "$REGISTRY_FILE"
 
           old="/tmp/previous-$REGISTRY_NAME.yaml"
-          if gh api "repos/${{ env.REGISTRY_REPO }}/contents/$REGISTRY_FILE?ref=main" \
+          if gh api "repos/${{ env.REGISTRY_REPO }}/contents/$REGISTRY_FILE?ref=${{ steps.reg-base.outputs.base }}" \
                --header "Authorization: Bearer $GH_REGISTRY_TOKEN" \
                --jq .content | base64 -d > "$old" 2>/dev/null && [ -s "$old" ]; then
             echo "previous release found; running the sbob-diff-gate ladder (fail-on: $FAIL_ON)"
@@ -354,7 +391,7 @@ jobs:
           branch="sbob-registry-$reg_name-$(git log -1 --format=%h)"
 
           gh api -X DELETE "repos/${{ env.REGISTRY_REPO }}/git/refs/heads/$branch" >/dev/null 2>&1 || true
-          sha="$(gh api "repos/${{ env.REGISTRY_REPO }}/git/ref/heads/main" --jq .object.sha)"
+          sha="$(gh api "repos/${{ env.REGISTRY_REPO }}/git/ref/heads/${{ steps.reg-base.outputs.base }}" --jq .object.sha)"
           gh api -X POST "repos/${{ env.REGISTRY_REPO }}/git/refs" \
             -f ref="refs/heads/$branch" -f sha="$sha" >/dev/null
 
@@ -369,7 +406,7 @@ jobs:
 
           gh pr create \
             --repo "${{ env.REGISTRY_REPO }}" \
-            --base main \
+            --base "${{ steps.reg-base.outputs.base }}" \
             --head "$branch" \
             --title "sbob(${{ inputs.registry-dir }}): $reg_name $version" \
             --body-file /tmp/pr-body.md
