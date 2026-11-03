@@ -495,14 +495,14 @@ public static class GeneratePipeline
         return sb.ToString();
     }
 
-    private static string EmitCoverage(BehaviorIr ir) => JsonSerializer.Serialize(new CoverageDocument(
+    private static string EmitCoverage(BehaviorIr ir) => CanonicalText.LfOnly(JsonSerializer.Serialize(new CoverageDocument(
         ir.IrVersion, ir.ComputeBehaviorHash(),
         ir.Coverage.FilesAnalyzed, ir.Coverage.TestFiles, ir.Coverage.TestEntries,
         ir.Coverage.Quarantined.Select(q => new CoverageRow(
             q.Primitive.ToString(), q.Reason, q.File, q.Line, q.TestId, q.CatalogRuleId)).ToArray(),
         ir.Coverage.Noise.Select(n => new NoiseRow(n.Description, n.File, n.Line, n.TestId)).ToArray(),
         ir.Coverage.Unrepresentable.Select(u => new CoverageRow(
-            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options) + "\n";
+            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options)) + "\n";
 
     public static string RoslynVersion() =>
         typeof(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
