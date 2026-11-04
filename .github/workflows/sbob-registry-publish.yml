@@ -26,10 +26,16 @@ name: sbob-registry-publish
 # Stages:
 #   1. drift gate — sbobforge generate --check --frozen (org decision #26):
 #      a drifted profile is never signed or published; fix by regenerating.
-#   2. cosign keyless (OIDC) signing of the SBoB + provenance sidecar with the
-#      repo workflow identity (org decision #14): <file>.sig + <file>.bundle,
-#      the artifact names sbobctl's CosignVerifier expects.
-#   3. dialect conversion to the registry dialect (TDS 10.4).
+#   2. dialect conversion to the registry dialect (TDS 10.4). Conversion runs
+#      BEFORE signing: the registry file is the published artifact, and the
+#      signature must bind to its exact bytes. (Found live on the v1.5.39
+#      registry branches: signing pre-convert produced .sig/.bundle whose
+#      Rekor payload hash matched the kubescape-dialect profile, so consumer
+#      `cosign verify-blob` against the registry file failed.)
+#   3. cosign keyless (OIDC) signing of the registry-dialect SBoB + provenance
+#      sidecar with the repo workflow identity (org decision #14):
+#      <file>.sig + <file>.bundle, the artifact names sbobctl's CosignVerifier
+#      expects.
 #   4. public-lane content gate (TDS 10.5, lane: public only) — sbobforge gate:
 #      private DNS suffixes, internal (non-loopback) IP ranges, or bare
 #      single-label hostnames fail the publish BEFORE the registry PR is opened.
@@ -267,27 +273,10 @@ jobs:
           grep -q "imageID: ${{ inputs.package-purl }}" "${{ steps.paths.outputs.sbob-file }}" \
             || { echo "spec.imageID does not match package-purl input '${{ inputs.package-purl }}'"; exit 2; }
 
-      - name: Sign SBoB + provenance (cosign keyless OIDC)
-        uses: sigstore/cosign-installer@v3
-
-      - name: cosign sign-blob (SBoB + provenance sidecar)
-        shell: bash
-        env:
-          SBOB_FILE: ${{ steps.paths.outputs.sbob-file }}
-          PROV_FILE: ${{ steps.paths.outputs.provenance-file }}
-        run: |
-          set -euo pipefail
-          for f in "$SBOB_FILE" "$PROV_FILE"; do
-            [ -f "$f" ] || { echo "missing signing input: $f"; exit 2; }
-            cosign sign-blob --yes --output-signature "$f.sig" --bundle "$f.bundle" "$f"
-            cosign verify-blob \
-              --bundle "$f.bundle" \
-              --certificate-identity-regexp '^https://github.com/DevelApp-ai/' \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "$f"
-          done
-
       - name: Convert to the registry dialect (TDS 10.4)
+        # Runs BEFORE signing: cosign signs the registry-dialect file that is
+        # actually published, so `cosign verify-blob` works straight from the
+        # registry repo (the command the registry PR body embeds).
         shell: bash
         env:
           SBOB_FILE: ${{ steps.paths.outputs.sbob-file }}
@@ -297,10 +286,26 @@ jobs:
           mkdir -p "$(dirname "$REGISTRY_FILE")"
           dotnet run --no-build --project sbobforge-repo/src/SBOBForge.Cli -- \
             convert "$SBOB_FILE" "$REGISTRY_FILE"
-          # The registry copy carries the same signature artifacts so cosign
-          # verify-blob works straight from the registry repo.
-          cp "$SBOB_FILE.sig" "$REGISTRY_FILE.sig"
-          cp "$SBOB_FILE.bundle" "$REGISTRY_FILE.bundle"
+
+      - name: Sign SBoB + provenance (cosign keyless OIDC)
+        uses: sigstore/cosign-installer@v3
+
+      - name: cosign sign-blob (registry SBoB + provenance sidecar)
+        shell: bash
+        env:
+          REGISTRY_FILE: ${{ steps.paths.outputs.registry-file }}
+          PROV_FILE: ${{ steps.paths.outputs.provenance-file }}
+        run: |
+          set -euo pipefail
+          for f in "$REGISTRY_FILE" "$PROV_FILE"; do
+            [ -f "$f" ] || { echo "missing signing input: $f"; exit 2; }
+            cosign sign-blob --yes --output-signature "$f.sig" --bundle "$f.bundle" "$f"
+            cosign verify-blob \
+              --bundle "$f.bundle" \
+              --certificate-identity-regexp '^https://github.com/DevelApp-ai/' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$f"
+          done
 
       - name: Public-lane content gate (TDS 10.5; skipped on the private lane)
         if: ${{ inputs.lane == 'public' }}
