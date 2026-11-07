@@ -1,10 +1,10 @@
 name: callee-repair
 
-# One-shot repair lane (round 2): rebuilds sbob-registry-publish.yml
+# One-shot repair lane (round 3): rebuilds sbob-registry-publish.yml
 # byte-clean from the pre-#39 base (f004b54a) plus the put() update-path fix
-# (delivered as repair-new.txt on this branch), and pushes a fix branch based
-# on the clean base. The #39 merge (f686793c) landed with long lines wrapped
-# mid-token (invalid YAML). Self-validates the result md5 before pushing.
+# (repair-new.txt on this branch), and pushes a fix branch based on current
+# main. Self-validates the result md5; self-reports any failure stage into
+# an issue.
 
 on:
   push:
@@ -14,6 +14,7 @@ on:
 permissions:
   contents: write
   workflows: write
+  issues: write
 
 jobs:
   rebuild:
@@ -24,14 +25,27 @@ jobs:
         shell: bash
         env:
           EXPECTED_MD5: d3f60c6533c7cf706b7dc3bcb048024d
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          stage="start"
+          report() {
+            echo "FAILED at stage: $stage" >&2
+            gh issue create --repo DevelApp-ai/SBOB-Forge \
+              --title "callee-repair failed at stage: $stage" \
+              --body "Run: https://github.com/DevelApp-ai/SBOB-Forge/actions/runs/$GITHUB_RUN_ID" || true
+          }
+          trap 'rc=$?; [ $rc -ne 0 ] && report || true' EXIT
+          stage="fetch-base"
           base="https://raw.githubusercontent.com/DevelApp-ai/SBOB-Forge/f004b54a876618fa8684d27d9ff6302f298419c2/.github/workflows/sbob-registry-publish.yml"
           curl -sfL "$base" -o wf.yml
           [ "$(wc -c < wf.yml)" -gt 19000 ] || { echo "base fetch bad"; exit 1; }
+          stage="check-new-block"
           [ "$(wc -c < repair-new.txt)" -eq 1232 ] || { echo "repair-new.txt wrong size"; exit 1; }
+          stage="extract-old"
           awk '/^          b64\(\) \{ base64 -w0 "\$1"; \}$/{f=1} f{print} f && /^          \}$/{exit}' wf.yml > /tmp/old.txt
           [ "$(wc -c < /tmp/old.txt)" -eq 226 ] || { echo "old block extraction wrong size"; exit 1; }
+          stage="patch"
           python3 - <<'PYEOF'
           old = open('/tmp/old.txt').read()
           new = open('repair-new.txt').read()
@@ -39,15 +53,19 @@ jobs:
           assert p.count(old) == 1, "old block not found exactly once in base"
           open('wf.yml', 'w').write(p.replace(old, new))
           PYEOF
+          stage="md5-gate"
           got="$(md5sum wf.yml | cut -d' ' -f1)"
           [ "$got" = "$EXPECTED_MD5" ] || { echo "md5 mismatch: $got != $EXPECTED_MD5"; exit 1; }
           grep -q 'existing_sha=' wf.yml
-          git fetch -q --depth 1 origin f004b54a876618fa8684d27d9ff6302f298419c2
+          stage="branch-from-main"
+          git fetch -q --depth 1 origin main
           git checkout -q FETCH_HEAD
           cp wf.yml .github/workflows/sbob-registry-publish.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/sbob-registry-publish.yml
           git commit -qm "sbob-registry-publish: supply the blob sha when the registry file already exists (update path)"
-          git push -q "https://x-access-token:${{ github.token }}@github.com/DevelApp-ai/SBOB-Forge.git" HEAD:refs/heads/fix/registry-put-existing-sha-3
-          echo "pushed fix/registry-put-existing-sha-3"
+          stage="push-fix-branch"
+          git push -q "https://x-access-token:${{ github.token }}@github.com/DevelApp-ai/SBOB-Forge.git" HEAD:refs/heads/fix/registry-put-existing-sha-4
+          trap - EXIT
+          echo "pushed fix/registry-put-existing-sha-4"
