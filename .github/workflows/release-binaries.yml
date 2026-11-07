@@ -154,11 +154,13 @@ jobs:
     container:
       image: debian:bookworm-slim
     steps:
-      - run: |
+      - shell: bash
+        run: |
           apt-get update -qq
           apt-get install -y -qq ca-certificates libicu72 curl tar git xz-utils
 
       - name: Clean room — assert no .NET toolchain anywhere
+        shell: bash
         run: |
           if command -v dotnet >/dev/null 2>&1; then
             echo "::error::this smoke image unexpectedly has dotnet — the clean-room claim is void" >&2
@@ -175,6 +177,7 @@ jobs:
 
       - name: 'Resolve binary dir (artifact-layout agnostic)'
         id: bindir
+        shell: bash
         run: |
           set -euo pipefail
           # The download may lay the assets out flat or nested depending on
@@ -202,6 +205,7 @@ jobs:
         env:
           SBORGFORGE_BINARY_DIR: ${{ steps.bindir.outputs.binary-dir }}
           SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
+        shell: bash
         run: |
           set -euo pipefail
           bin="$(bash scripts/install-binary.sh)"
@@ -211,6 +215,7 @@ jobs:
       - name: Binary reports the built version
         env:
           BIN: ${{ steps.install.outputs.binary-path }}
+        shell: bash
         run: |
           set -euo pipefail
           reported="$("$BIN" version | head -1 | awk '{print $2}')"
@@ -221,6 +226,7 @@ jobs:
       - name: Drift gate via binary — fixture goldens regenerate byte-identically
         env:
           BIN: ${{ steps.install.outputs.binary-path }}
+        shell: bash
         run: |
           set -euo pipefail
           for fixture in python-pytest bash-bats dotnet-xunit; do
@@ -231,6 +237,7 @@ jobs:
       - name: Broken-input control — a failing command must surface non-zero
         env:
           BIN: ${{ steps.install.outputs.binary-path }}
+        shell: bash
         run: |
           set +e
           "$BIN" scan does/not/exist
