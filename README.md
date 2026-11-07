@@ -6,6 +6,8 @@
 - Source standard: SBOB spec v0.0.4 — https://billofbehavior.com/bob/docs/spec/
 - Downstream consumer: [DevelApp-ai/Software-Bill-of-Behavior](https://github.com/DevelApp-ai/Software-Bill-of-Behavior) (SBoB to Wazuh transpiler)
 - Parsing substrate: [DevelApp.Minotaur](https://github.com/DevelApp-ai/Minotaur) + [Minotaur-Grammars](https://github.com/DevelApp-ai/Minotaur-Grammars)
+- **Third-party adoption guide**: [docs/adoption.md](docs/adoption.md) — bring your own registry, two installs, nothing private from DevelApp
+- **GitHub Action**: root [`action.yml`](action.yml) wraps the sbobforge CLI; the full signed publish lane is the reusable [`sbob-registry-publish.yml`](.github/workflows/sbob-registry-publish.yml); starter workflow template in [`.github/workflow-templates/`](.github/workflow-templates/)
 
 ## Status
 

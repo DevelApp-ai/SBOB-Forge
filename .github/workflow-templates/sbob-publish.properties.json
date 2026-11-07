@@ -1,0 +1,4 @@
+{
+  "name": "Publish a signed SBoB to your registry",
+  "description": "Generate a Software Bill of Behavior profile from your package's test suite (SBOB-Forge), then publish it cosign keyless-signed to a registry repository you own. Registry layout: sbobs/<ecosystem>/<name>.yaml + .sig + .bundle. Requires a fine-grained PAT with Contents + Pull requests read/write on the registry repo."
+}

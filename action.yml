@@ -1,0 +1,79 @@
+name: 'sbobforge'
+description: 'Tests → SBoB generator as a GitHub Action: derive a Software Bill of Behavior profile from a package''s committed test suite (version / scan / generate with drift gate / convert / gate — the sbobforge CLI on .NET 8). For the full signed publish lane to a registry repo you own, call the repo''s reusable workflow sbob-registry-publish.yml (see docs/adoption.md).'
+author: 'DevelApp-ai'
+
+branding:
+  icon: 'hammer'
+  color: 'purple'
+
+inputs:
+  command:
+    description: 'sbobforge command: version | scan | generate | convert | gate'
+    required: false
+    default: 'version'
+  args:
+    description: 'Raw sbobforge arguments appended verbatim (whitespace-split, each token shell-quoted). e.g. "examples/python-pytest-fixture --check --frozen" for generate.'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Working directory for the command (default: the workspace root)'
+    required: false
+    default: ''
+  dotnet-version:
+    description: '.NET SDK version for actions/setup-dotnet (default: 8.0.x)'
+    required: false
+    default: '8.0.x'
+  nuget-auth-token:
+    description: 'PAT with read:packages forwarded as NUGET_AUTH_TOKEN for the GitHub Packages feed in NuGet.config (the pinned DevelApp.Minotaur parsing substrate restores through it; the nuget.org source restores without it). Pass secrets.GITHUB_TOKEN when this repo can read the feed.'
+    required: false
+    default: ''
+
+outputs:
+  exit-code:
+    description: 'sbobforge exit code (propagated from the CLI); the workflow can branch on it without failing the step'
+    value: ${{ steps.sbobforge.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Set up .NET 8 (sbobforge CLI, net8.0)'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: 'Run sbobforge'
+      id: sbobforge
+      shell: bash
+      working-directory: ${{ inputs.working-directory != '' && inputs.working-directory || github.workspace }}
+      env:
+        SBOBFORGE_PROJECT: ${{ github.action_path }}/src/SBOBForge.Cli
+        SBOBFORGE_COMMAND: ${{ inputs.command }}
+        SBOBFORGE_ARGS: ${{ inputs.args }}
+        NUGET_AUTH_TOKEN: ${{ inputs.nuget-auth-token }}
+      run: |
+        set -euo pipefail
+
+        case "$SBOBFORGE_COMMAND" in
+          version|scan|generate|convert|gate) ;;
+          *)
+            echo "unknown command: $SBOBFORGE_COMMAND (expected version|scan|generate|convert|gate)" >&2
+            exit 2
+            ;;
+        esac
+
+        args=()
+        # raw passthrough — each token shell-quoted, no eval, injection-safe
+        for a in $SBOBFORGE_ARGS; do args+=("$a"); done
+
+        set +e
+        dotnet run --project "$SBOBFORGE_PROJECT" -- "$SBOBFORGE_COMMAND" "${args[@]}"
+        rc=$?
+        set -e
+
+        echo "exit-code=$rc" >> "$GITHUB_OUTPUT"
+        {
+          echo "### sbobforge $SBOBFORGE_COMMAND — exit $rc"
+          echo
+          echo "_The full signed publish lane (convert-before-sign → cosign keyless → content gate → sbobctl validate/diff → registry PR) runs through the reusable workflow \`sbob-registry-publish.yml\` — see docs/adoption.md._"
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit 0
