@@ -1,5 +1,5 @@
 name: 'sbobforge'
-description: 'Tests → SBoB generator as a GitHub Action: derive a Software Bill of Behavior profile from a package''s committed test suite (version / scan / generate with drift gate / convert / gate — the sbobforge CLI on .NET 8). For the full signed publish lane to a registry repo you own, call the repo''s reusable workflow sbob-registry-publish.yml (see docs/adoption.md).'
+description: 'Tests → SBoB generator as a GitHub Action: derive a Software Bill of Behavior profile from a package''s committed test suite (version / scan / generate with drift gate / convert / gate — the sbobforge CLI). Source mode runs the CLI on .NET 8; binary mode (binary: true) downloads a single-file self-contained release binary instead — no .NET install, no packages token. For the full signed publish lane to a registry repo you own, call the repo''s reusable workflow sbob-registry-publish.yml (see docs/adoption.md).'
 author: 'DevelApp-ai'
 
 branding:
@@ -20,11 +20,19 @@ inputs:
     required: false
     default: ''
   dotnet-version:
-    description: '.NET SDK version for actions/setup-dotnet (default: 8.0.x)'
+    description: '.NET SDK version for actions/setup-dotnet (source mode only; default: 8.0.x)'
     required: false
     default: '8.0.x'
   nuget-auth-token:
-    description: 'PAT with read:packages forwarded as NUGET_AUTH_TOKEN for the GitHub Packages feed in NuGet.config (the pinned DevelApp.Minotaur parsing substrate restores through it; the nuget.org source restores without it). Pass secrets.GITHUB_TOKEN when this repo can read the feed.'
+    description: 'PAT with read:packages forwarded as NUGET_AUTH_TOKEN for the GitHub Packages feed in NuGet.config (source mode only — the pinned DevelApp.Minotaur parsing substrate restores through it; the nuget.org source restores without it). Pass secrets.GITHUB_TOKEN when this repo can read the feed. Binary mode needs no token.'
+    required: false
+    default: ''
+  binary:
+    description: 'true → run a single-file self-contained release binary instead of the .NET source (no setup-dotnet, no restore). The binary is downloaded from the SBOB-Forge release named by binary-version and sha256-verified against the published checksums before it runs (fail closed).'
+    required: false
+    default: 'false'
+  binary-version:
+    description: 'Release version for binary mode, v-prefix optional (e.g. "1.0.0"). Empty = latest published release. Pin it alongside the action ref for reproducible consumer CI.'
     required: false
     default: ''
 
@@ -37,9 +45,22 @@ runs:
   using: 'composite'
   steps:
     - name: 'Set up .NET 8 (sbobforge CLI, net8.0)'
+      if: ${{ inputs.binary != 'true' }}
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: 'Install sbobforge binary (single-file self-contained, sha256-verified)'
+      if: ${{ inputs.binary == 'true' }}
+      id: binary-install
+      shell: bash
+      env:
+        SBORGFORGE_VERSION: ${{ inputs.binary-version }}
+      run: |
+        set -euo pipefail
+        bin="$(bash "${{ github.action_path }}/scripts/install-binary.sh")"
+        echo "installed sbobforge binary: $bin"
+        echo "binary-path=$bin" >> "$GITHUB_OUTPUT"
 
     - name: 'Run sbobforge'
       id: sbobforge
@@ -47,6 +68,7 @@ runs:
       working-directory: ${{ inputs.working-directory != '' && inputs.working-directory || github.workspace }}
       env:
         SBOBFORGE_PROJECT: ${{ github.action_path }}/src/SBOBForge.Cli
+        SBOBFORGE_BIN: ${{ steps.binary-install.outputs.binary-path }}
         SBOBFORGE_COMMAND: ${{ inputs.command }}
         SBOBFORGE_ARGS: ${{ inputs.args }}
         NUGET_AUTH_TOKEN: ${{ inputs.nuget-auth-token }}
@@ -66,8 +88,14 @@ runs:
         for a in $SBOBFORGE_ARGS; do args+=("$a"); done
 
         set +e
-        dotnet run --project "$SBOBFORGE_PROJECT" -- "$SBOBFORGE_COMMAND" "${args[@]}"
-        rc=$?
+        if [ -n "$SBOBFORGE_BIN" ]; then
+          # binary mode (#27): the single-file self-contained release binary
+          "$SBOBFORGE_BIN" "$SBOBFORGE_COMMAND" "${args[@]}"
+          rc=$?
+        else
+          dotnet run --project "$SBOBFORGE_PROJECT" -- "$SBOBFORGE_COMMAND" "${args[@]}"
+          rc=$?
+        fi
         set -e
 
         echo "exit-code=$rc" >> "$GITHUB_OUTPUT"

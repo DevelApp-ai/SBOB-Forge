@@ -1,0 +1,271 @@
+name: release-binaries
+
+# SBOB-Registry #27 — single-file self-contained sbobforge binaries for
+# consumer CI without a .NET toolchain. NativeAOT is blocked (Roslyn is not
+# AOT-compatible), so this is plain self-contained single-file publish.
+#
+#   release published          → build the tagged tree + smoke + ATTACH
+#   workflow_dispatch (tag)    → same, for an existing release (backfill:
+#                                 run against the tag ref to rebuild exactly
+#                                 the tagged tree)
+#   pull_request (paths)        → build + smoke only, never attach
+#
+# Smoke coverage is the #27 acceptance criterion: the full publish chain runs
+# in a clean container with NO .NET anywhere, and the binary must reproduce
+# the committed fixture goldens byte-identically (generate --check --frozen,
+# the #25/#31/#32/#34 drift-gate family stays green through the binary).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach binaries to, e.g. v1.0.0'
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/release-binaries.yml'
+      - 'action.yml'
+      - 'scripts/install-binary.sh'
+      - 'src/SBOBForge.Cli/**'
+
+permissions:
+  # contents: write is needed only to attach release assets on the release /
+  # dispatch paths; pull_request runs never use it (nothing to attach).
+  contents: write
+  packages: read
+
+jobs:
+  publish-binaries:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve version (single source of truth: Program.Version)
+        id: ver
+        run: |
+          v="$(sed -n 's/.*public const string Version = "\([^"]*\)".*/\1/p' src/SBOBForge.Cli/Program.cs)"
+          [ -n "$v" ] || { echo "could not read Program.Version from src/SBOBForge.Cli/Program.cs" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "sbobforge version: $v"
+
+      - name: Release tag ↔ version consistency (fail closed)
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+          else
+            tag="${{ inputs.tag }}"
+          fi
+          tag_version="${tag#v}"
+          if [ "$tag_version" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::release tag $tag does not match Program.Version ${{ steps.ver.outputs.version }} — bump src/SBOBForge.Cli/Program.cs or re-tag (the release-version-check gate's sibling)" >&2
+            exit 1
+          fi
+          echo "tag $tag matches Program.Version ${{ steps.ver.outputs.version }}"
+
+      - name: Publish single-file self-contained (linux-x64, linux-arm64, win-x64)
+        env:
+          # Org decision #8: GitHub Packages reads authenticate with the org
+          # secret, falling back to GITHUB_TOKEN (packages: read).
+          NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq zip
+          mkdir -p dist
+          for rid in linux-x64 linux-arm64 win-x64; do
+            echo "=== publish $rid ==="
+            dotnet publish src/SBOBForge.Cli -c Release -r "$rid" \
+              --self-contained true \
+              -p:PublishSingleFile=true \
+              -p:EnableCompressionInSingleFile=true \
+              -p:PublishTrimmed=false \
+              -o "out/$rid" 2>&1 | tee -a publish.log
+            # only the apphost ships — the .pdb never enters an asset
+            if [ "$rid" = win-x64 ]; then
+              ( cd "out/$rid" && zip -q "../../dist/sbobforge-${{ steps.ver.outputs.version }}-$rid.zip" sbobforge.exe )
+            else
+              ( cd "out/$rid" && chmod +x sbobforge && tar -czf "../../dist/sbobforge-${{ steps.ver.outputs.version }}-$rid.tar.gz" sbobforge )
+            fi
+          done
+          ( cd dist && sha256sum sbobforge-*.tar.gz sbobforge-*.zip > "sbobforge-${{ steps.ver.outputs.version }}-checksums.txt" )
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbobforge-binaries
+          path: dist/
+
+      - name: Attach assets to the release
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+          else
+            tag="${{ inputs.tag }}"
+          fi
+          echo "attaching binaries to release $tag"
+          gh release upload "$tag" dist/* --clobber
+
+      # Self-reporting failure diagnostics (org decision #29): public-repo
+      # job logs are sign-in gated, so post the publish log to the PR.
+      - name: Report failure context to PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let body = 'no publish.log captured';
+            try {
+              const t = fs.readFileSync('publish.log', 'utf8').trimEnd();
+              body = '```\n' + (t.length > 14000 ? '...[tail]\n' + t.slice(-14000) : t) + '\n```';
+            } catch {}
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: 'release-binaries failure context (run ' + context.runId + '):\n\n' + body
+            });
+
+  # #27 acceptance criterion: the binary runs on a clean runner with NO .NET
+  # toolchain (debian:bookworm-slim has no dotnet anywhere) and reproduces
+  # the committed fixture goldens byte-identically.
+  binary-smoke:
+    needs: publish-binaries
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm-slim
+    steps:
+      - run: |
+          apt-get update -qq
+          apt-get install -y -qq ca-certificates libicu72 curl tar git xz-utils
+
+      - name: Clean room — assert no .NET toolchain anywhere
+        run: |
+          if command -v dotnet >/dev/null 2>&1; then
+            echo "::error::this smoke image unexpectedly has dotnet — the clean-room claim is void" >&2
+            exit 1
+          fi
+          echo "clean room confirmed: no dotnet in PATH"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbobforge-binaries
+          path: dist
+
+      - name: Install via scripts/install-binary.sh (local asset mode)
+        id: install
+        env:
+          SBORGFORGE_BINARY_DIR: dist
+          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          bin="$(bash scripts/install-binary.sh)"
+          echo "installed: $bin"
+          echo "binary-path=$bin" >> "$GITHUB_OUTPUT"
+
+      - name: Binary reports the built version
+        env:
+          BIN: ${{ steps.install.outputs.binary-path }}
+        run: |
+          set -euo pipefail
+          reported="$("$BIN" version | head -1 | awk '{print $2}')"
+          echo "reported version: $reported"
+          [ "$reported" = "${{ needs.build.outputs.version }}" ] \
+            || { echo "::error::binary reports $reported, expected ${{ needs.build.outputs.version }}" >&2; exit 1; }
+
+      - name: Drift gate via binary — fixture goldens regenerate byte-identically
+        env:
+          BIN: ${{ steps.install.outputs.binary-path }}
+        run: |
+          set -euo pipefail
+          for fixture in python-pytest bash-bats dotnet-xunit; do
+            echo "=== generate --check --frozen: examples/$fixture-fixture ==="
+            "$BIN" generate "examples/$fixture-fixture" --check --frozen
+          done
+
+      - name: Broken-input control — a failing command must surface non-zero
+        env:
+          BIN: ${{ steps.install.outputs.binary-path }}
+        run: |
+          set +e
+          "$BIN" scan does/not/exist
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::binary exited 0 on a broken input — failing open" >&2
+            exit 1
+          fi
+          echo "broken input exited $rc as expected"
+
+  # Consumer shape through the shipped action: binary mode must wrap the same
+  # command/exit-code contract with no .NET install and no packages token.
+  action-binary-mode:
+    needs: publish-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbobforge-binaries
+          path: dist
+
+      - name: 'sbobforge action (binary mode): version'
+        id: version
+        uses: ./
+        with:
+          command: version
+          binary: true
+        env:
+          SBORGFORGE_BINARY_DIR: dist
+          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+
+      - name: assert version exit-code 0
+        run: test "${{ steps.version.outputs.exit-code }}" = 0
+
+      - name: 'sbobforge action (binary mode): generate --check --frozen'
+        id: drift
+        uses: ./
+        with:
+          command: generate
+          args: examples/python-pytest-fixture --check --frozen
+          binary: true
+        env:
+          SBORGFORGE_BINARY_DIR: dist
+          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+
+      - name: assert drift exit-code 0
+        run: test "${{ steps.drift.outputs.exit-code }}" = 0
+
+      - name: 'sbobforge action (binary mode): scan (broken input — must fail)'
+        id: broken
+        uses: ./
+        with:
+          command: scan
+          args: does/not/exist
+          binary: true
+        env:
+          SBORGFORGE_BINARY_DIR: dist
+          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+
+      - name: assert broken-input exit-code non-zero (lane fails if it ever passes silently)
+        run: |
+          ec="${{ steps.broken.outputs.exit-code }}"
+          if [ "$ec" = "0" ]; then
+            echo "broken input exited 0 — the action is failing open" >&2
+            exit 1
+          fi
