@@ -20,6 +20,11 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- SBOB-Registry #27: the shipped single-file self-contained binary is
+         `sbobforge` (linux) / `sbobforge.exe` (win-x64) — AssemblyName drives
+         the apphost name on every RID; without this the apphost is
+         SBOBForge.Cli and the release assets fail to package. -->
+    <AssemblyName>sbobforge</AssemblyName>
   </PropertyGroup>
 
 </Project>

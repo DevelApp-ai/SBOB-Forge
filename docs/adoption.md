@@ -44,6 +44,12 @@ ad-hoc).
 > (`DevelApp.Minotaur`) through a GitHub Packages feed — forward a
 > `read:packages` PAT (`nuget-auth-token` input / `NUGET_AUTH_TOKEN`) until
 > the substrate is additionally published on nuget.org.
+>
+> **No .NET in the runner?** Every SBOB-Forge release attaches single-file
+> self-contained binaries (linux-x64, linux-arm64, win-x64). Run the action
+> with `binary: true` — it downloads the release binary named by
+> `binary-version` (empty = latest), sha256-verifies it against the
+> published checksums, and runs it: no SDK, no restore, no packages token.
 
 ## 2. Stand up your registry repo
 
@@ -171,6 +177,8 @@ Release-to-release, gate deploys with the scored behavior-delta ladder:
   Kubescape-dialect bridge (`sbobforge convert`) is pinned and
   drift-tested, and a consolidation decision is tracked in
   [SBOB-Forge #29](https://github.com/DevelApp-ai/SBOB-Forge/issues/29).
-- **Self-contained binaries** (no .NET install in consumer CI) and
-  **Marketplace listings** for both repos are in flight — tracked in
+- **Self-contained binaries** are attached to every SBOB-Forge release
+  (linux-x64/arm64, win-x64); the action's `binary: true` mode skips the
+  .NET install and the packages token entirely. cosign-signed binaries
+  with fail-closed verify in the action are the remaining leaf, tracked in
   [SBOB-Registry #24](https://github.com/DevelApp-ai/SBOB-Registry/issues/24).
