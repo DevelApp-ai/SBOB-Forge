@@ -14,6 +14,13 @@ name: release-binaries
 # in a clean container with NO .NET anywhere, and the binary must reproduce
 # the committed fixture goldens byte-identically (generate --check --frozen,
 # the #25/#31/#32/#34 drift-gate family stays green through the binary).
+#
+# SBOB-Registry #26: every asset (incl. the checksums file) is cosign
+# keyless-signed (org decision #14) before upload/attach, and
+# scripts/install-binary.sh fail-closed verifies each asset against the
+# pinned release-binaries workflow identity before execute. Both smoke lanes
+# carry a tampered-binary control that MUST fail (in action-binary-mode the
+# action step itself fails — the binary never runs).
 
 on:
   release:
@@ -40,6 +47,10 @@ permissions:
   # the publish failure is invisible on a public repo (sign-in gated logs).
   pull-requests: write
   packages: read
+  # id-token: write — cosign keyless OIDC signing (org decision #14).
+  # Same-repo pull_request runs mint OIDC tokens too, so the PR smoke
+  # lanes verify the same signatures consumers verify.
+  id-token: write
 
 jobs:
   publish-binaries:
@@ -106,6 +117,29 @@ jobs:
           ( cd dist && sha256sum sbobforge-*.tar.gz sbobforge-*.zip > "sbobforge-${{ steps.ver.outputs.version }}-checksums.txt" )
           ls -la dist
 
+      # SBOB-Registry #26 / org decision #14: cosign keyless (OIDC) signing
+      # of every published asset, INCLUDING the checksums file. Signs the
+      # exact bytes that ship (assets are built above, never touched again),
+      # then immediately verifies with the same pin install-binary.sh uses —
+      # the consumer's verify-blob command, proven at publish time.
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign assets (cosign keyless OIDC, verified with the consumer pin)
+        run: |
+          set -euo pipefail
+          exec >> publish.log 2>&1
+          shopt -s nullglob
+          for f in dist/sbobforge-*.tar.gz dist/sbobforge-*.zip dist/sbobforge-*-checksums.txt; do
+            echo "=== cosign sign-blob: $(basename "$f") ==="
+            cosign sign-blob --yes --output-signature "$f.sig" --bundle "$f.bundle" "$f"
+            cosign verify-blob \
+              --bundle "$f.bundle" \
+              --certificate-identity-regexp '^https://github\.com/DevelApp-ai/SBOB-Forge/\.github/workflows/release-binaries\.yml@' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$f"
+          done
+          ls -la dist
+
       - uses: actions/upload-artifact@v4
         with:
           name: sbobforge-binaries
@@ -169,6 +203,11 @@ jobs:
           echo "clean room confirmed: no dotnet in PATH"
 
       - uses: actions/checkout@v5
+
+      # binary-mode verification needs cosign in the clean-room container too
+      # (node actions run in container jobs; cosign itself is a static
+      # binary, no .NET, no dotnet in PATH — the clean-room claim holds).
+      - uses: sigstore/cosign-installer@v3
 
       - uses: actions/download-artifact@v4
         with:
@@ -249,6 +288,30 @@ jobs:
           fi
           echo "broken input exited $rc as expected"
 
+      - name: Tampered-binary control — signature verification must fail closed (#26)
+        env:
+          BINARY_DIR: ${{ steps.bindir.outputs.binary-dir }}
+          VERSION: ${{ needs.publish-binaries.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tamper="$(mktemp -d)"
+          cp "$BINARY_DIR"/sbobforge-* "$tamper"/
+          asset="$tamper/sbobforge-$VERSION-linux-x64.tar.gz"
+          # append one byte to the asset itself (the bundle is untouched): a
+          # corrupted binary must fail cosign verification, never execute
+          printf 'A' >> "$asset"
+          set +e
+          SBORGFORGE_BINARY_DIR="$tamper" SBORGFORGE_VERSION="$VERSION" \
+            bash scripts/install-binary.sh >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::tampered binary installed cleanly — verification is failing open" >&2
+            exit 1
+          fi
+          echo "tampered binary refused (exit $rc) as expected"
+
   # Consumer shape through the shipped action: binary mode must wrap the same
   # command/exit-code contract with no .NET install and no packages token.
   action-binary-mode:
@@ -326,3 +389,30 @@ jobs:
             echo "broken input exited 0 — the action is failing open" >&2
             exit 1
           fi
+
+      # SBOB-Registry #26 acceptance criterion: a tampered binary must FAIL
+      # the action itself (fail-closed), not just the standalone script.
+      - name: Stage a tampered copy of the downloaded assets
+        run: |
+          set -euo pipefail
+          rm -rf tampered-dist && mkdir tampered-dist
+          cp "${{ steps.bindir.outputs.binary-dir }}"/sbobforge-* tampered-dist/
+          printf 'A' >> "tampered-dist/sbobforge-${{ needs.publish-binaries.outputs.version }}-linux-x64.tar.gz"
+
+      - name: 'sbobforge action (binary mode): tampered binary must fail closed'
+        id: tampered
+        uses: ./
+        with:
+          command: version
+          binary: true
+          binary-version: ${{ needs.publish-binaries.outputs.version }}
+          binary-dir: tampered-dist
+        continue-on-error: true
+
+      - name: assert the action step failed (fail-closed — the binary never ran)
+        run: |
+          if [ "${{ steps.tampered.outcome }}" != "failure" ]; then
+            echo "::error::the action accepted a tampered binary — failing open" >&2
+            exit 1
+          fi
+          echo "tampered binary failed the action as expected"

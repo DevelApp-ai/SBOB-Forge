@@ -11,12 +11,18 @@
 #     by SBORGFORGE_VERSION (v-prefix optional); an empty SBORGFORGE_VERSION
 #     resolves the latest published release.
 #
-# Fail-closed: the asset's sha256 is verified against the release checksum
-# file before anything is executed. This is also the seam where the #26
-# cosign verification slots in (bundle + identity pin before the checksum).
+# Fail-closed in two layers (SBOB-Registry #26/#27, org decision #14):
+#   1. cosign verify-blob against the keyless bundle — the asset must verify
+#      as signed by the SBOB-Forge release-binaries workflow before anything
+#      is executed. Identity pin and issuer are overridable via
+#      SBORGFORGE_IDENTITY_REGEXP / SBORGFORGE_OIDC_ISSUER; the defaults pin
+#      the workflow FILE and allow any ref (PR smoke lanes sign with their
+#      own merge refs and must verify too).
+#   2. sha256 against the release checksum file (#27 behavior, kept).
 #
-# Exit codes: 0 ok; 1 usage; 2 asset/checksum entry not found;
-# 3 download/extract failure; 4 checksum mismatch; 5 unsupported platform.
+# Exit codes: 0 ok; 1 usage; 2 asset/checksum/sig entry not found;
+# 3 download/extract failure; 4 checksum mismatch; 5 unsupported platform;
+# 6 cosign unavailable (fail-closed, never a skip); 7 signature verification failed.
 
 set -euo pipefail
 
@@ -37,13 +43,21 @@ esac
 VERSION="${SBORGFORGE_VERSION:-}"
 VERSION="${VERSION#v}"
 
+# --- cosign trust pins (org decision #14; leaf #26) ------------------------
+# Pin the signing WORKFLOW FILE, allow any ref: PR smoke lanes sign with
+# their merge refs and must verify too; a tag-signed release matches as well.
+IDENTITY_RE="${SBORGFORGE_IDENTITY_REGEXP:-^https://github\.com/DevelApp-ai/SBOB-Forge/\.github/workflows/release-binaries\.yml@}"
+OIDC_ISSUER="${SBORGFORGE_OIDC_ISSUER:-https://token.actions.githubusercontent.com}"
+
 if [ -n "${SBORGFORGE_BINARY_DIR:-}" ]; then
   [ -n "$VERSION" ] || fail 1 "SBORGFORGE_BINARY_DIR set but SBORGFORGE_VERSION empty — cannot locate the checksum file"
   ASSET_DIR="$SBORGFORGE_BINARY_DIR"
   ASSET="$ASSET_DIR/sbobforge-$VERSION-$PLATFORM.$([ "$PLATFORM" = win-x64 ] && echo zip || echo tar.gz)"
   CHECKSUMS="$ASSET_DIR/sbobforge-$VERSION-checksums.txt"
+  SIG="$ASSET.bundle"
   [ -f "$ASSET" ] || fail 2 "local asset missing: $ASSET"
   [ -f "$CHECKSUMS" ] || fail 2 "local checksum file missing: $CHECKSUMS"
+  [ -f "$SIG" ] || fail 2 "local cosign bundle missing: $SIG — binaries are verified fail-closed (#26); unsigned assets are refused"
 else
   if [ -z "$VERSION" ]; then
     # resolve the latest release tag via the redirect — no API call, no auth
@@ -65,9 +79,23 @@ else
   curl -fsSL -o "$CHECKSUMS" \
     "https://github.com/$REPO_SLUG/releases/download/v$VERSION/$CHECKSUMS_NAME" \
     || fail 3 "download failed: $CHECKSUMS_NAME (release v$VERSION)"
+  SIG="$DEST/$ASSET_NAME.bundle"
+  curl -fsSL -o "$SIG" \
+    "https://github.com/$REPO_SLUG/releases/download/v$VERSION/$ASSET_NAME.bundle" \
+    || fail 3 "download failed: $ASSET_NAME.bundle (release v$VERSION — releases cut before #26 carry no signatures and are refused, by design)"
 fi
 
 ASSET_NAME="$(basename "$ASSET")"
+
+# --- fail-closed cosign verification before anything is executed (#26) -----
+command -v cosign >/dev/null 2>&1 \
+  || fail 6 "cosign not found — sbobforge release binaries are signature-verified fail-closed (org decision #14); install cosign first (e.g. sigstore/cosign-installer) and retry"
+cosign verify-blob \
+  --bundle "$SIG" \
+  --certificate-identity-regexp "$IDENTITY_RE" \
+  --certificate-oidc-issuer "$OIDC_ISSUER" \
+  "$ASSET" \
+  || fail 7 "signature verification failed: $ASSET_NAME does not verify against the pinned release-binaries workflow identity — do not run it"
 
 # --- fail-closed checksum verification before anything is executed ---------
 ( cd "$(dirname "$ASSET")" \
