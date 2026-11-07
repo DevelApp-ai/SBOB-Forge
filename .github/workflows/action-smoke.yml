@@ -1,0 +1,81 @@
+name: action-smoke
+
+# SBOB-Registry #32 — the shipped sbobforge action, the reusable publish lane
+# and the starter workflow template must keep working from a consumer-shaped
+# checkout on every PR and on main. The broken-input step is the
+# deliberately-broken control: a failing command must surface a non-zero
+# exit-code, never pass silently.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  sbobforge-action:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # consumer shape 1 — the action wraps the CLI end to end (version)
+      - name: 'sbobforge action: version'
+        id: version
+        uses: ./
+        with:
+          command: version
+          # org decision #8: GitHub Packages reads authenticate with the org
+          # secret, falling back to GITHUB_TOKEN (packages: read)
+          nuget-auth-token: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+      - name: assert version exit-code 0
+        run: test "${{ steps.version.outputs.exit-code }}" = 0
+
+      # consumer shape 2 — scan a committed fixture through raw args
+      - name: 'sbobforge action: scan'
+        id: scan
+        uses: ./
+        with:
+          command: scan
+          args: examples/python-pytest-fixture
+          nuget-auth-token: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+      - name: assert scan exit-code 0
+        run: test "${{ steps.scan.outputs.exit-code }}" = 0
+
+      # deliberately-broken control — a failing command must surface non-zero
+      - name: 'sbobforge action: scan (broken input — must fail)'
+        id: broken
+        uses: ./
+        with:
+          command: scan
+          args: does/not/exist
+          nuget-auth-token: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+      - name: assert broken-input exit-code non-zero (lane fails if it ever passes silently)
+        run: |
+          ec="${{ steps.broken.outputs.exit-code }}"
+          if [ "$ec" = "0" ]; then
+            echo "broken input exited 0 — the action is failing open" >&2
+            exit 1
+          fi
+
+      # template ↔ reusable-workflow contract: the starter template must stay
+      # wired to the publish lane's real inputs and secrets
+      - name: Template ↔ reusable-workflow contract
+        run: |
+          set -euo pipefail
+          tpl=.github/workflow-templates/sbob-publish.yml
+          lane=.github/workflows/sbob-registry-publish.yml
+          grep -q "sbob-registry-publish.yml@" "$tpl" || { echo "template no longer calls the reusable publish lane" >&2; exit 1; }
+          for input in package-purl sbob-file registry-dir registry-repo lane; do
+            grep -Eq "^[[:space:]]+${input}:" "$tpl" || { echo "template no longer wires input: $input" >&2; exit 1; }
+            grep -Eq "^[[:space:]]+${input}:" "$lane" || { echo "reusable lane no longer declares input: $input" >&2; exit 1; }
+          done
+          for sec in SBOB_REGISTRY_TOKEN PACKAGES_READ_TOKEN; do
+            grep -q "$sec" "$tpl" || { echo "template no longer forwards secret: $sec" >&2; exit 1; }
+            grep -q "$sec" "$lane" || { echo "reusable lane no longer declares secret: $sec" >&2; exit 1; }
+          done
+          jq -e . .github/workflow-templates/sbob-publish.properties.json >/dev/null || { echo "template properties JSON invalid" >&2; exit 1; }
+          ruby -ryaml -e 'YAML.load_file(ARGV[0])' "$tpl" || { echo "template YAML invalid" >&2; exit 1; }
+          echo "template contract OK"
