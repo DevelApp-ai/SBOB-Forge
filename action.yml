@@ -28,7 +28,7 @@ inputs:
     required: false
     default: ''
   binary:
-    description: 'true → run a single-file self-contained release binary instead of the .NET source (no setup-dotnet, no restore). The binary is downloaded from the SBOB-Forge release named by binary-version and sha256-verified against the published checksums before it runs (fail closed).'
+    description: 'true → run a single-file self-contained release binary instead of the .NET source (no setup-dotnet, no restore). The binary is downloaded from the SBOB-Forge release named by binary-version and verified fail-closed before it runs: cosign keyless signature against the pinned release-binaries workflow identity, then sha256 against the published checksums.'
     required: false
     default: 'false'
   binary-version:
@@ -54,7 +54,11 @@ runs:
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
 
-    - name: 'Install sbobforge binary (single-file self-contained, sha256-verified)'
+    - name: 'Set up cosign (binary-mode signature verification, fail-closed)'
+      if: ${{ inputs.binary == 'true' }}
+      uses: sigstore/cosign-installer@v3
+
+    - name: 'Install sbobforge binary (self-contained, cosign + sha256 verified)'
       if: ${{ inputs.binary == 'true' }}
       id: binary-install
       shell: bash
