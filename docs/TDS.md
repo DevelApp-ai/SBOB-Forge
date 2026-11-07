@@ -374,7 +374,7 @@ metadata:
   annotations:
     kubescape.io/managed-by: User
     develapp.io/binding: package-purl
-    develapp.io/generator: sbobforge@0.1.0
+    develapp.io/generator: sbobforge@1.0.0
     develapp.io/grammar-lock-sha256: 9f2c41…
     develapp.io/behavior-hash: 4a71b0…
 spec:
