@@ -1,0 +1,59 @@
+# Publish a signed SBoB to your registry
+#
+# Starter workflow — calls the SBOB-Forge reusable publish lane
+# (.github/workflows/sbob-registry-publish.yml in DevelApp-ai/SBOB-Forge):
+#
+#   1. drift gate     sbobforge generate --check --frozen (committed profile
+#                     must regenerate byte-identically — a drifted profile is
+#                     never signed)
+#   2. convert        dialect conversion to the registry dialect BEFORE signing
+#   3. sign          cosign keyless (OIDC) — the signature binds to the exact
+#                    bytes you publish, using THIS repo's workflow identity
+#   4. gate          public-lane content gate (private DNS/IP/hostnames fail)
+#   5. validate/diff  sbobctl validate + release diff vs the previous entry
+#   6. registry PR   sbobs/<dir>/<name>.yaml + .sig + .bundle in YOUR registry
+#                    repo (the pipeline opens the PR; it never merges it)
+#
+# Prerequisites (see docs/adoption.md in DevelApp-ai/SBOB-Forge):
+#   - a committed SBoB profile in this repo (sbobforge generate + commit),
+#     drift-gated per the SBOB-Forge conventions
+#   - a registry repo YOU own with the sbobs/<ecosystem>/ layout
+#   - an org/repo secret SBOB_REGISTRY_TOKEN: a fine-grained PAT scoped to
+#     exactly that registry repo with Contents read/write + Pull requests
+#     read/write + Metadata read (a cross-repo PR — the workflow's own
+#     github.token can never open it, by design; an empty token fails
+#     closed before any signing)
+#
+# Pin the reusable workflow BY SHA in real use:
+#   uses: DevelApp-ai/SBOB-Forge/.github/workflows/sbob-registry-publish.yml@<sha>
+name: sbob publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read    # substrate restore
+  id-token: write   # cosign keyless OIDC
+
+jobs:
+  sbob-publish:
+    uses: DevelApp-ai/SBOB-Forge/.github/workflows/sbob-registry-publish.yml@main  # pin by SHA in real use
+    with:
+      # the purl of the package this SBoB describes (tag-derived on release)
+      package-purl: "pkg:nuget/your-package@1.0.0"
+      # the committed, drift-gated profile this repo generated
+      sbob-file: "sbob/your-package.linux.sbob.yaml"
+      # registry subdirectory = artifact ecosystem (sbobs/nuget, sbobs/choco, ...)
+      registry-dir: "sbobs/nuget"
+      # YOUR registry repo — the pipeline is audience-agnostic; point it anywhere
+      registry-repo: "your-org/your-sbob-registry"
+      # public lane enforces the content gate before the registry PR; private skips it
+      lane: "public"
+    secrets:
+      SBOB_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
+      # forward a read:packages PAT if the NuGet restore needs the GitHub Packages
+      # feed (see the substrate pin in DevelApp-ai/SBOB-Forge's NuGet.config)
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
