@@ -83,6 +83,9 @@ jobs:
           NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
           set -euo pipefail
+          # capture the WHOLE step output (apt, packaging, everything) — last
+          # failure died in packaging stderr, invisible to a dotnet-only tee
+          exec > >(tee -a publish.log) 2>&1
           sudo apt-get update -qq && sudo apt-get install -y -qq zip
           mkdir -p dist
           for rid in linux-x64 linux-arm64 win-x64; do
