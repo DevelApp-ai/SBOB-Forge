@@ -35,6 +35,10 @@ inputs:
     description: 'Release version for binary mode, v-prefix optional (e.g. "1.0.0"). Empty = latest published release. Pin it alongside the action ref for reproducible consumer CI.'
     required: false
     default: ''
+  binary-dir:
+    description: 'Local directory holding the release assets (sbobforge-<ver>-<platform>.tar.gz/.zip + sbobforge-<ver>-checksums.txt) instead of downloading from the release — for CI lanes that build the binaries in the same run, or air-gapped installs. Requires binary-version. (Binary mode only.)'
+    required: false
+    default: ''
 
 outputs:
   exit-code:
@@ -56,6 +60,7 @@ runs:
       shell: bash
       env:
         SBORGFORGE_VERSION: ${{ inputs.binary-version }}
+        SBORGFORGE_BINARY_DIR: ${{ inputs.binary-dir }}
       run: |
         set -euo pipefail
         bin="$(bash "${{ github.action_path }}/scripts/install-binary.sh")"

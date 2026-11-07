@@ -173,10 +173,34 @@ jobs:
           name: sbobforge-binaries
           path: dist
 
+      - name: 'Resolve binary dir (artifact-layout agnostic)'
+        id: bindir
+        run: |
+          set -euo pipefail
+          # The download may lay the assets out flat or nested depending on
+          # how upload-artifact computed the artifact root — resolve the dir
+          # that actually contains the checksums file instead of assuming.
+          hit="$(find dist -type f -name 'sbobforge-*-checksums.txt' 2>/dev/null | head -1 || true)"
+          [ -n "$hit" ] || {
+            echo "::error::no sbobforge-*-checksums.txt found under dist — downloaded artifact layout unexpected"
+            find dist -type f -print 2>/dev/null || true
+            exit 1
+          }
+          d="$(cd "$(dirname "$hit")" && pwd)"
+          echo "binary-dir=$d" >> "$GITHUB_OUTPUT"
+          # job summaries render publicly (logs are sign-in gated) — ground truth for the layout
+          {
+            echo "### binary-smoke: downloaded artifact layout"
+            echo '```'
+            find dist -type f -printf '%p\n' 2>/dev/null | sort
+            echo '```'
+            echo "resolved binary dir: \`$d\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install via scripts/install-binary.sh (local asset mode)
         id: install
         env:
-          SBORGFORGE_BINARY_DIR: dist
+          SBORGFORGE_BINARY_DIR: ${{ steps.bindir.outputs.binary-dir }}
           SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
         run: |
           set -euo pipefail
@@ -231,15 +255,36 @@ jobs:
           name: sbobforge-binaries
           path: dist
 
+      - name: 'Resolve binary dir (artifact-layout agnostic)'
+        id: bindir
+        run: |
+          set -euo pipefail
+          # Same resolution as binary-smoke: find the dir that actually
+          # contains the checksums file instead of assuming the layout.
+          hit="$(find dist -type f -name 'sbobforge-*-checksums.txt' 2>/dev/null | head -1 || true)"
+          [ -n "$hit" ] || {
+            echo "::error::no sbobforge-*-checksums.txt found under dist — downloaded artifact layout unexpected"
+            find dist -type f -print 2>/dev/null || true
+            exit 1
+          }
+          d="$(cd "$(dirname "$hit")" && pwd)"
+          echo "binary-dir=$d" >> "$GITHUB_OUTPUT"
+          {
+            echo "### action-binary-mode: downloaded artifact layout"
+            echo '```'
+            find dist -type f -printf '%p\n' 2>/dev/null | sort
+            echo '```'
+            echo "resolved binary dir: \`$d\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 'sbobforge action (binary mode): version'
         id: version
         uses: ./
         with:
           command: version
           binary: true
-        env:
-          SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
+          binary-version: ${{ needs.publish-binaries.outputs.version }}
+          binary-dir: ${{ steps.bindir.outputs.binary-dir }}
 
       - name: assert version exit-code 0
         run: test "${{ steps.version.outputs.exit-code }}" = 0
@@ -251,9 +296,8 @@ jobs:
           command: generate
           args: examples/python-pytest-fixture --check --frozen
           binary: true
-        env:
-          SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
+          binary-version: ${{ needs.publish-binaries.outputs.version }}
+          binary-dir: ${{ steps.bindir.outputs.binary-dir }}
 
       - name: assert drift exit-code 0
         run: test "${{ steps.drift.outputs.exit-code }}" = 0
@@ -265,9 +309,8 @@ jobs:
           command: scan
           args: does/not/exist
           binary: true
-        env:
-          SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
+          binary-version: ${{ needs.publish-binaries.outputs.version }}
+          binary-dir: ${{ steps.bindir.outputs.binary-dir }}
 
       - name: assert broken-input exit-code non-zero (lane fails if it ever passes silently)
         run: |
