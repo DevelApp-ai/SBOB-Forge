@@ -49,7 +49,7 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Resolve version (single source of truth: Program.Version)
+      - name: 'Resolve version (single source of truth: Program.Version)'
         id: ver
         run: |
           v="$(sed -n 's/.*public const string Version = "\([^"]*\)".*/\1/p' src/SBOBForge.Cli/Program.cs)"
