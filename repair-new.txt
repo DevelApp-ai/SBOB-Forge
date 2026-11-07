@@ -1,0 +1,20 @@
+          b64() { base64 -w0 "$1"; }
+          # The lane files pre-exist in the registry once a product has
+          # published once (the 1.5.40 entries, SBOB-Registry PRs #1/#2): a
+          # contents PUT on an existing path needs the current blob sha or
+          # GitHub rejects it with 422 "sha wasn't supplied" -- which is how
+          # the v1.5.41 publish failed after the first-ever entries landed
+          # (DevelApp-ai/Minotaur#187: registry branches created but zero
+          # content commits pushed). Fetch the existing blob sha when the
+          # file is already on the branch; omit it for first-time creates.
+          put() {
+            existing_sha="$(gh api "repos/${{ env.REGISTRY_REPO }}/contents/$1?ref=$branch" --jq .sha 2>/dev/null || true)"
+            if [ -n "$existing_sha" ]; then
+              gh api -X PUT "repos/${{ env.REGISTRY_REPO }}/contents/$1" \
+                -f message="$2" -f content="$(b64 "$3")" -f branch="$branch" \
+                -f sha="$existing_sha" >/dev/null
+            else
+              gh api -X PUT "repos/${{ env.REGISTRY_REPO }}/contents/$1" \
+                -f message="$2" -f content="$(b64 "$3")" -f branch="$branch" >/dev/null
+            fi
+          }
