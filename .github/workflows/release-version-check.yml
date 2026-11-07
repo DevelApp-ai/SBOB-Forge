@@ -1,0 +1,66 @@
+# Release gate (issue SBOB-Registry #25): the tag name and the version
+# compiled into the tool must agree. Runs on every v* tag push; a tag that
+# does not match src/SBOBForge.Cli/Program.cs Version fails here, before
+# any release or Marketplace listing is cut from it.
+name: release-version-check
+
+on:
+  push:
+    tags: ['v*']
+  # Allow the lane to be exercised on PRs that touch the version const or
+  # this workflow, without requiring a tag.
+  pull_request:
+    paths:
+      - 'src/SBOBForge.Cli/Program.cs'
+      - '.github/workflows/release-version-check.yml'
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        shell: bash
+        env:
+          # Org decision #8: GitHub Packages reads authenticate with the org
+          # secret, falling back to GITHUB_TOKEN (packages: read).
+          NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+        run: |
+          set -o pipefail
+          dotnet restore 2>&1 | tee restore.log
+
+      - name: Build (warnings as errors)
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build --no-restore -warnaserror 2>&1 | tee build.log
+
+      # On a tag push GITHUB_REF_NAME is the tag (vX.Y.Z); on a PR run there
+      # is no tag to compare against, so only prove the tool reports the
+      # version const it was built from (the tag comparison is exercised on
+      # every real release).
+      - name: sbobforge version
+        shell: bash
+        run: |
+          set -euo pipefail
+          reported="$(dotnet run --no-build --project src/SBOBForge.Cli -- version | head -1 | awk '{print $2}')"
+          echo "reported version: $reported"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "PR run: version command reported '$reported' (tag comparison skipped, no tag on PRs)"
+            exit 0
+          fi
+          tag_version="${GITHUB_REF_NAME#v}"
+          echo "tag version:    $tag_version"
+          if [ "$reported" != "$tag_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match compiled sbobforge version $reported — bump src/SBOBForge.Cli/Program.cs Version or re-tag"
+            exit 1
+          fi
+          echo "OK: tag $GITHUB_REF_NAME matches compiled version $reported"
