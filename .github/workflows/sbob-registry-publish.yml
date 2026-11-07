@@ -31,8 +31,7 @@ name: sbob-registry-publish
 #      signature must bind to its exact bytes. (Found live on the v1.5.39
 #      registry branches: signing pre-convert produced .sig/.bundle whose
 #      Rekor payload hash matched the kubescape-dialect profile, so consumer
-#      `cosign verify-blob` against the regi
-stry file failed.)
+#      `cosign verify-blob` against the registry file failed.)
 #   3. cosign keyless (OIDC) signing of the registry-dialect SBoB + provenance
 #      sidecar with the repo workflow identity (org decision #14):
 #      <file>.sig + <file>.bundle, the artifact names sbobctl's CosignVerifier
@@ -66,8 +65,7 @@ on:
   workflow_call:
     inputs:
       package-purl:
-        description: 'Version-pinned package purl the profile is bound to (
-must equal spec.imageID)'
+        description: 'Version-pinned package purl the profile is bound to (must equal spec.imageID)'
         required: true
         type: string
       sbob-file:
@@ -114,7 +112,6 @@ must equal spec.imageID)'
         type: string
       fail-on:
         description: 'Diff-gate verdict at which publishing stops: none | advisory | mandatory'
-
         required: false
         default: 'mandatory'
         type: string
@@ -160,8 +157,7 @@ jobs:
       # in sync with the calling jobs' permissions blocks.
       packages: read
       id-token: write   # cosign keyless OIDC (org decision #14)
-    ste
-ps:
+    steps:
       # The default checkout in a reusable workflow is the CALLING (product) repo.
       - uses: actions/checkout@v5
 
@@ -218,8 +214,7 @@ ps:
       - name: Fail closed on a missing registry token
         shell: bash
         env:
-          GH_REGISTRY_TOKEN: ${{ secrets.SBOB_REGIST
-RY_TOKEN }}
+          GH_REGISTRY_TOKEN: ${{ secrets.SBOB_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           # Fail closed, up front: the 2026-11-03 v1.5.27 dispatch reached
@@ -258,8 +253,7 @@ RY_TOKEN }}
           # PACKAGES_READ_TOKEN is only visible when the caller forwards it
           # via its secrets: mapping — otherwise this expression silently
           # falls to github.token, which needs both packages: read in this
-       
-   # job's permissions and the calling repo granted access to the
+          # job's permissions and the calling repo granted access to the
           # package. Callers that have the org secret should forward it.
           NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
@@ -300,8 +294,7 @@ RY_TOKEN }}
         shell: bash
         env:
           REGISTRY_FILE: ${{ steps.paths.outputs.registry-file }}
-          PROV_FILE: ${{ st
-eps.paths.outputs.provenance-file }}
+          PROV_FILE: ${{ steps.paths.outputs.provenance-file }}
         run: |
           set -euo pipefail
           for f in "$REGISTRY_FILE" "$PROV_FILE"; do
@@ -346,8 +339,7 @@ eps.paths.outputs.provenance-file }}
           old="/tmp/previous-$REGISTRY_NAME.yaml"
           if gh api "repos/${{ env.REGISTRY_REPO }}/contents/$REGISTRY_FILE?ref=${{ steps.reg-base.outputs.base }}" \
                --header "Authorization: Bearer $GH_REGISTRY_TOKEN" \
-               --jq .content | base64 -d > "$old" 2>
-/dev/null && [ -s "$old" ]; then
+               --jq .content | base64 -d > "$old" 2>/dev/null && [ -s "$old" ]; then
             echo "previous release found; running the sbob-diff-gate ladder (fail-on: $FAIL_ON)"
             node sbob-repo/src/cli.ts diff --old "$old" --new "$REGISTRY_FILE" --fail-on "$FAIL_ON"
           else
@@ -388,8 +380,7 @@ eps.paths.outputs.provenance-file }}
             -e "s|LANE_GATE_NOTE|$gate_note|g" \
             -e "s|LANE|${{ inputs.lane }}|g" \
             -e "s|FAIL_ON|${{ inputs.fail-on }}|g" \
-            
--e "s|PINNED_SHA|${{ env.TOOLING_REPO_SHA }}|g" \
+            -e "s|PINNED_SHA|${{ env.TOOLING_REPO_SHA }}|g" \
             /tmp/pr-body.md
 
       - name: Open the registry PR
@@ -413,7 +404,7 @@ eps.paths.outputs.provenance-file }}
           # The lane files pre-exist in the registry once a product has
           # published once (the 1.5.40 entries, SBOB-Registry PRs #1/#2): a
           # contents PUT on an existing path needs the current blob sha or
-          # GitHub rejects it with 422 "sha wasn't supplied" — which is how
+          # GitHub rejects it with 422 "sha wasn't supplied" -- which is how
           # the v1.5.41 publish failed after the first-ever entries landed
           # (DevelApp-ai/Minotaur#187: registry branches created but zero
           # content commits pushed). Fetch the existing blob sha when the
