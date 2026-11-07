@@ -35,6 +35,10 @@ permissions:
   # contents: write is needed only to attach release assets on the release /
   # dispatch paths; pull_request runs never use it (nothing to attach).
   contents: write
+  # pull-requests: write is the failure-context comment channel (org
+  # decision #29) — without it the Report failure step cannot post and
+  # the publish failure is invisible on a public repo (sign-in gated logs).
+  pull-requests: write
   packages: read
 
 jobs:
