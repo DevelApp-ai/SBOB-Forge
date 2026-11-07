@@ -1,22 +1,25 @@
 name: callee-repair
 
-# One-shot repair lane: rebuilds .github/workflows/sbob-registry-publish.yml
-# byte-clean from the pre-#39 base (f004b54a) plus the put() update-path fix,
-# and pushes it to fix/registry-put-existing-sha-3. The #39 merge (f686793c)
-# landed with long lines wrapped mid-token (invalid YAML) - this rebuilds from
-# the clean base. Self-validates the result md5 before pushing.
+# One-shot repair lane (round 2): rebuilds sbob-registry-publish.yml
+# byte-clean from the pre-#39 base (f004b54a) plus the put() update-path fix
+# (delivered as repair-new.txt on this branch), and pushes a fix branch based
+# on the clean base. The #39 merge (f686793c) landed with long lines wrapped
+# mid-token (invalid YAML). Self-validates the result md5 before pushing.
 
 on:
   push:
     branches: [repair/callee]
+    paths: [.github/workflows/callee-repair.yml]
 
 permissions:
   contents: write
+  workflows: write
 
 jobs:
   rebuild:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - name: Rebuild the fixed reusable workflow and push it
         shell: bash
         env:
@@ -26,11 +29,12 @@ jobs:
           base="https://raw.githubusercontent.com/DevelApp-ai/SBOB-Forge/f004b54a876618fa8684d27d9ff6302f298419c2/.github/workflows/sbob-registry-publish.yml"
           curl -sfL "$base" -o wf.yml
           [ "$(wc -c < wf.yml)" -gt 19000 ] || { echo "base fetch bad"; exit 1; }
-          echo 'ICAgICAgICAgIGI2NCgpIHsgYmFzZTY0IC13MCAiJDEiOyB9CiAgICAgICAgICBwdXQoKSB7CiAgICAgICAgICAgIGdoIGFwaSAtWCBQVVQgInJlcG9zLyR7eyBlbnYuUkVHSVNUUllfUkVQTyB9fS9jb250ZW50cy8kMSIgXAogICAgICAgICAgICAgIC1mIG1lc3NhZ2U9IiQyIiAtZiBjb250ZW50PSIkKGI2NCAiJDMiKSIgLWYgYnJhbmNoPSIkYnJhbmNoIiA+L2Rldi9udWxsCiAgICAgICAgICB9Cg==' | base64 -d > /tmp/old.txt
-          echo 'ICAgICAgICAgIGI2NCgpIHsgYmFzZTY0IC13MCAiJDEiOyB9CiAgICAgICAgICAjIFRoZSBsYW5lIGZpbGVzIHByZS1leGlzdCBpbiB0aGUgcmVnaXN0cnkgb25jZSBhIHByb2R1Y3QgaGFzCiAgICAgICAgICAjIHB1Ymxpc2hlZCBvbmNlICh0aGUgMS41LjQwIGVudHJpZXMsIFNCT0ItUmVnaXN0cnkgUFJzICMxLyMyKTogYQogICAgICAgICAgIyBjb250ZW50cyBQVVQgb24gYW4gZXhpc3RpbmcgcGF0aCBuZWVkcyB0aGUgY3VycmVudCBibG9iIHNoYSBvcgogICAgICAgICAgIyBHaXRIdWIgcmVqZWN0cyBpdCB3aXRoIDQyMiAic2hhIHdhc24ndCBzdXBwbGllZCIgLS0gd2hpY2ggaXMgaG93CiAgICAgICAgICAjIHRoZSB2MS41LjQxIHB1Ymxpc2ggZmFpbGVkIGFmdGVyIHRoZSBmaXJzdC1ldmVyIGVudHJpZXMgbGFuZGVkCiAgICAgICAgICAjIChEZXZlbEFwcC1haS9NaW5vdGF1ciMxODc6IHJlZ2lzdHJ5IGJyYW5jaGVzIGNyZWF0ZWQgYnV0IHplcm8KICAgICAgICAgICMgY29udGVudCBjb21taXRzIHB1c2hlZCkuIEZldGNoIHRoZSBleGlzdGluZyBibG9iIHNoYSB3aGVuIHRoZQogICAgICAgICAgIyBmaWxlIGlzIGFscmVhZHkgb24gdGhlIGJyYW5jaDsgb21pdCBpdCBmb3IgZmlyc3QtdGltZSBjcmVhdGVzLgogICAgICAgICAgcHV0KCkgewogICAgICAgICAgICBleGlzdGluZ19zaGE9IiQoZ2ggYXBpICJyZXBvcy8ke3sgZW52LlJFR0lTVFJZX1JFUE8gfX0vY29udGVudHMvJDE/cmVmPSRicmFuY2giIC0tanEgLnNoYSAyPi9kZXYvbnVsbCB8fCB0cnVlKSIKICAgICAgICAgICAgaWYgWyAtbiAiJGV4aXN0aW5nX3NoYSIgXTsgdGhlbgogICAgICAgICAgICAgIGdoIGFwaSAtWCBQVVQgInJlcG9zLyR7exBlbnYuUkVHSVNUUllfUkVQTyB9fS9jb250ZW50cy8kMSIgXAogICAgICAgICAgICAgICAgLWYgbWVzc2FnZT0iJDIiIC1mIGNvbnRlbnQ9IiQoYjY0ICIkMyIpIiAtZiBicmFuY2g9IiRicmFuY2giIFwKICAgICAgICAgICAgICAgIC1mIHNoYT0iJGV4aXN0aW5nX3NoYSIgPi9kZXYvbnVsbAogICAgICAgICAgICBlbHNlCiAgICAgICAgICAgICAgZ2ggYXBpIC1YIFBVVCAicmVwb3MvJHt7IGVudi5SRUdJU1RSWV9SRVBPIH19L2NvbnRlbnRzLyQxIiBcCiAgICAgICAgICAgICAgICAtZiBtZXNzYWdlPSIkMiIgLWYgY29udGVudD0iJChiNjQgIiQzIikiIC1mIGJyYW5jaD0iJGJyYW5jaCIgPi9kZXYvbnVsbAogICAgICAgICAgICBmaQogICAgICAgICAgfQo=' | base64 -d > /tmp/new.txt
+          [ "$(wc -c < repair-new.txt)" -eq 1232 ] || { echo "repair-new.txt wrong size"; exit 1; }
+          awk '/^          b64\(\) \{ base64 -w0 "\$1"; \}$/{f=1} f{print} f && /^          \}$/{exit}' wf.yml > /tmp/old.txt
+          [ "$(wc -c < /tmp/old.txt)" -eq 226 ] || { echo "old block extraction wrong size"; exit 1; }
           python3 - <<'PYEOF'
           old = open('/tmp/old.txt').read()
-          new = open('/tmp/new.txt').read()
+          new = open('repair-new.txt').read()
           p = open('wf.yml').read()
           assert p.count(old) == 1, "old block not found exactly once in base"
           open('wf.yml', 'w').write(p.replace(old, new))
@@ -38,12 +42,12 @@ jobs:
           got="$(md5sum wf.yml | cut -d' ' -f1)"
           [ "$got" = "$EXPECTED_MD5" ] || { echo "md5 mismatch: $got != $EXPECTED_MD5"; exit 1; }
           grep -q 'existing_sha=' wf.yml
-          git clone -q --depth 1 --branch repair/callee "https://x-access-token:${{ github.token }}@github.com/DevelApp-ai/SBOB-Forge.git" repo
-          cd repo
-          cp ../wf.yml .github/workflows/sbob-registry-publish.yml
+          git fetch -q --depth 1 origin f004b54a876618fa8684d27d9ff6302f298419c2
+          git checkout -q FETCH_HEAD
+          cp wf.yml .github/workflows/sbob-registry-publish.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "sbob-registry-publish: byte-clean rebuild of the update-path fix (repair of f686793c line-wrap damage)"
+          git add .github/workflows/sbob-registry-publish.yml
+          git commit -qm "sbob-registry-publish: supply the blob sha when the registry file already exists (update path)"
           git push -q "https://x-access-token:${{ github.token }}@github.com/DevelApp-ai/SBOB-Forge.git" HEAD:refs/heads/fix/registry-put-existing-sha-3
           echo "pushed fix/registry-put-existing-sha-3"
