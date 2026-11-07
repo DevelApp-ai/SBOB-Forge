@@ -79,3 +79,24 @@ jobs:
           jq -e . .github/workflow-templates/sbob-publish.properties.json >/dev/null || { echo "template properties JSON invalid" >&2; exit 1; }
           ruby -ryaml -e 'YAML.load_file(ARGV[0])' "$tpl" || { echo "template YAML invalid" >&2; exit 1; }
           echo "template contract OK"
+
+      # org-wide surfacing (#30): every repo's Actions-tab "New workflow" picker
+      # reads the DevelApp-ai/.github org repo — its copies must stay
+      # byte-identical to this repo's canonical template, or the lane fails
+      - name: Org-template sync — DevelApp-ai/.github copy must be byte-identical
+        run: |
+          set -euo pipefail
+          for f in sbob-publish.yml sbob-publish.properties.json; do
+            # API raw route (not raw.githubusercontent — the CDN lags behind
+            # freshly merged .github changes and would false-fail the lane)
+            curl -fsSL \
+              -H "Authorization: Bearer ${{ github.token }}" \
+              -H "Accept: application/vnd.github.raw+json" \
+              "https://api.github.com/repos/DevelApp-ai/.github/contents/workflow-templates/$f?ref=main" \
+              -o "/tmp/org-$f"
+            if ! diff -q ".github/workflow-templates/$f" "/tmp/org-$f" >/dev/null; then
+              echo "org template drift: DevelApp-ai/.github workflow-templates/$f differs from this repo's canonical copy — update the .github repo (or this repo) to restore symmetry" >&2
+              exit 1
+            fi
+          done
+          echo "org-template sync OK: DevelApp-ai/.github copies are byte-identical"
