@@ -170,7 +170,7 @@ jobs:
         id: install
         env:
           SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
         run: |
           set -euo pipefail
           bin="$(bash scripts/install-binary.sh)"
@@ -184,8 +184,8 @@ jobs:
           set -euo pipefail
           reported="$("$BIN" version | head -1 | awk '{print $2}')"
           echo "reported version: $reported"
-          [ "$reported" = "${{ needs.build.outputs.version }}" ] \
-            || { echo "::error::binary reports $reported, expected ${{ needs.build.outputs.version }}" >&2; exit 1; }
+          [ "$reported" = "${{ needs.publish-binaries.outputs.version }}" ] \
+            || { echo "::error::binary reports $reported, expected ${{ needs.publish-binaries.outputs.version }}" >&2; exit 1; }
 
       - name: Drift gate via binary — fixture goldens regenerate byte-identically
         env:
@@ -232,7 +232,7 @@ jobs:
           binary: true
         env:
           SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
 
       - name: assert version exit-code 0
         run: test "${{ steps.version.outputs.exit-code }}" = 0
@@ -246,7 +246,7 @@ jobs:
           binary: true
         env:
           SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
 
       - name: assert drift exit-code 0
         run: test "${{ steps.drift.outputs.exit-code }}" = 0
@@ -260,7 +260,7 @@ jobs:
           binary: true
         env:
           SBORGFORGE_BINARY_DIR: dist
-          SBORGFORGE_VERSION: ${{ needs.build.outputs.version }}
+          SBORGFORGE_VERSION: ${{ needs.publish-binaries.outputs.version }}
 
       - name: assert broken-input exit-code non-zero (lane fails if it ever passes silently)
         run: |
