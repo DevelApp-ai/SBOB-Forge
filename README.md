@@ -32,3 +32,7 @@ for f in dotnet-xunit java-junit5 java-testng python-pytest python-unittest go-t
   dotnet run --project src/SBOBForge.Cli -- generate "examples/$f-fixture" --check --frozen
 done
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 DevelApp.ai ApS.
