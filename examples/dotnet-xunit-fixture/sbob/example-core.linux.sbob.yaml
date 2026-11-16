@@ -8,7 +8,7 @@ metadata:
     develapp.io/binding: package-purl
     develapp.io/generator: sbobforge@1.0.0
     develapp.io/grammar-lock-sha256: 8e5651bf16ecf80ab37c143263072547922c294ad593ca17fe68cdef116ffe57
-    develapp.io/behavior-hash: 4b9aef2051a80e93fac0f7d13aad127bc9821cb3d456cf4c86b7c4c09de6fafe
+    develapp.io/behavior-hash: 011f38d595e6d83f05ae86a2c1f475bd094ab86cf38b6c947071b82169c01124
 spec:
   architectures: [amd64]
   imageID: pkg:nuget/example.core@1.0.0
@@ -20,6 +20,8 @@ spec:
       flags: [O_WRONLY, O_CREAT, O_TRUNC]
     - path: /etc/app/config.json
       flags: [O_RDONLY]
+    - path: "/tmp/⋯"
+      flags: [O_WRONLY, O_CREAT, O_TRUNC]
     - path: /var/log/app.log
       flags: [O_WRONLY, O_CREAT, O_TRUNC]
     - path: /var/log/other.log
@@ -30,6 +32,9 @@ spec:
       ports:
         - { port: 8080, protocol: TCP }
   egress:
+    - identifier: "*-egress"
+      type: external
+      ipAddresses: ["*"]
     - identifier: api.example.com-egress
       type: external
       dnsNames: [api.example.com]

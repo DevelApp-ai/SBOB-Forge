@@ -8,7 +8,11 @@
   "sutGlobs": [ "sut/**/*.py" ],
   "testGlobs": [ "tests/**/*.py" ],
   "pathPolicies": [
-    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true }
+    { "match": "%PackageRoot%", "emit": "/app/⋯", "prefix": true },
+    { "id": "snapshot-temp-dir", "match": "temp_root", "emit": "/tmp/⋯" }
+  ],
+  "netPolicies": [
+    { "id": "forwarded-request-url", "match": "target_url", "emit": "⋯" }
   ],
   "execPathPolicy": {
     "git": "/usr/bin/git"

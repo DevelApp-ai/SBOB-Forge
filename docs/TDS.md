@@ -339,10 +339,21 @@ Test code is full of host-shaped paths (`Path.GetTempPath()`, `./testfixtures/�
 | Tier | Condition | Emission |
 |---|---|---|
 | **L (literal)** | Argument constant-folds to an absolute path/URL literal **inside SUT code** (not the test) | Literal entry |
-| **P (pattern)** | Value depends on a *declared placeholder*: package root, config dir, data dir, temp dir — per `pathPolicies` in `sbobforge.json` | Mapped wildcard entry, e.g. package root → `/app/⋯`, config → `/etc/<name>/⋯` |
+| **P (pattern)** | Value depends on a *declared placeholder*: package root, config dir, data dir, temp dir — per `pathPolicies` in `sbobforge.json` — **or is an identifier-valued destination lifted through a declared placeholder policy** (SBOB-Forge #49, below) | Mapped wildcard entry, e.g. package root → `/app/⋯`, config → `/etc/<name>/⋯`, request-derived egress → the any-peer entry `ipAddresses: ["*"]` |
 | **Q (quarantine)** | Cannot be resolved statically (env vars, reflection, `Path.Combine(temp, …)`, non-constant `Invoke-Expression`) | **No SBOB entry.** Coverage-report row with provenance. `--strict` fails the build on Q>0; default is warn. |
 
 `--target-os windows` keeps Windows-native absolute paths (`C:\ProgramData\…`) — consumed by the transpiler's Windows/Sysmon lane; `--target-os linux` applies the POSIX policies above. The mapping table itself is config data committed in the repo, so it is reviewed like code and stable per target.
+
+#### Declared dynamic-destination placeholder policies (SBOB-Forge #49, 2026-11-16)
+
+Some honest packages are *entirely* dynamically addressed — an HTTP-forwarding plugin builds every downstream request URL from request data; a CLI reads and writes argument- and temp-derived paths. Under tier Q alone, such a package fail-closes with a section-shadowed quarantine (§8.4) and can carry no profile at all, while a metadata-only package with zero behavior gets a clean empty one. The declared-placeholder contract therefore extends from literal path prefixes to **identifier-valued destinations** — the tier-P mechanism, not a tier change:
+
+1. **`netPolicies`** (analogous to `pathPolicies`): `{ "id", "match", "emit" }`. A `Connect` candidate whose URL/host lowering quarantines **as an identifier** lifts when `match` equals that identifier — the policy declares where the class of dynamic destinations lives at runtime, the profile records the declared pattern. Matching is by **variable identity at the quarantine site** (Lars, 2026-11-16): declaration alone lifts nothing, and an undeclared dynamic destination still fail-closes into the coverage report.
+2. **Identifier `Open` paths via `pathPolicies`**: a `pathPolicies` entry whose `match` equals the identifier at the quarantine site lifts the open to the declared `emit` pattern; the entry must declare an `id` when used this way (it becomes the coverage row's rule). The rule's static flags travel with the lift; mode-dependent rules lift with `flags: []` (mode unconstrained).
+3. **`emit` shapes** (Lars, 2026-11-16): the bare segment wildcard `⋯` (spec 5.4 — "may connect anywhere") or a constrained pattern (e.g. `*.internal`). Both are honest and reviewable; both are rejected by the public-lane content gate (§10.5) unless explicitly `--allow`ed. **Spec-conformance mapping (replay-verified, 2026-11-16):** spec 5.8 as implemented by the downstream validator (`sbobctl` `compileDnsPattern`) admits `⋯` in DNS patterns only *between two labels* (`a.⋯.b.`) and rejects a bare `*`, so a bare `⋯`/`*` declaration never lands in `dnsNames` — it materializes as the spec 5.7 **any-peer entry** `ipAddresses: ["*"]` (no ports), which round-trips `sbobctl validate` unchanged. Constrained declarations must be spec 5.8 shapes (`*.suffix`, `prefix.*`, `a.⋯.b.`, plain name) and are validated at config load, fail-closed.
+4. **Coverage semantics** (Lars, 2026-11-16): lifted candidates keep a provenance row — tier **P** with the **policy id as the catalog-rule field** — so the report still shows declared-vs-observed-literal.
+
+The honest profile for a forwarding plugin is then visible and enforceable — `egress: [{ ipAddresses: ["*"] }]` instead of an empty section that falsely implies no egress, or no profile at all. Under Monitor → Audit → Enforce, a wildcard egress is exactly what a reviewer wants to see and gate. No policy → behavior unchanged: quarantine, section-shadowed fail-closed.
 
 ### 7.4 SUT attribution
 
@@ -403,7 +414,7 @@ spec:
 | Situation | Emission posture |
 |---|---|
 | No tests lift any behavior for a section | Section omitted (NULL) |
-| Every candidate entry quarantined | Section omitted + coverage report `section-shadowed` warning (downstream drift will be noisy — surface it) |
+| Every candidate entry quarantined and none lifted through a declared placeholder policy | Section omitted + coverage report `section-shadowed` warning (downstream drift will be noisy — surface it) |
 | Skipped test previously contributed entries | `--check` diff shows removal; PR review decides re-add vs retire |
 | Unrepresentable primitives (delete, chmod, symlink, rename) | Coverage report only (§15) |
 | `rulePolicies` | Omitted in v1 (NULL). Nothing in a test suite of the supported frameworks statically evidences kernel signature-class behavior at this tier. |
@@ -500,7 +511,8 @@ The private lane is not a degraded pipeline: the same drift gate, signing, conve
 
 - **private DNS suffixes** (`.internal`, `.intranet`, `.corp`, `.lan`, `.local`, `.private`, `.home`, `.localdomain`);
 - **internal IP ranges**: RFC1918 (10/8, 172.16/12, 192.168/16), link-local (169.254/16, fe80::/10), unique-local IPv6 (fc00::/7), CGNAT (100.64/10);
-- **bare single-label hostnames** (internal service names like `db`).
+- **bare single-label hostnames** (internal service names like `db`);
+- **wildcard destinations** (SBOB-Forge #49 tier-P egress: the any-peer entry `ipAddresses: ["*"]` materialized from a bare `⋯`/`*` declaration, or constrained DNS patterns like `*.internal`) — a wildcard honestly declares dynamic egress but names no reviewable target, so publishing one on the public lane is a reviewed `--allow` decision, visible in the diff.
 
 Loopback (`localhost`, 127.0.0.0/8, `::1`) is deliberately allowed: every test suite dials loopback fixtures and loopback reveals no estate topology — forbidding it would turn the gate into noise. Overrides exist and are explicit: `--allow <exact-host|dot-suffix|exact-ip>` (workflow input `content-gate-allow`), each one a reviewed decision visible in the calling workflow. The gate runs in the publish pipeline only on `lane: public`; the private lane skips it by design.
 

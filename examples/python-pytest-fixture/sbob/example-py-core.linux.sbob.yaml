@@ -8,7 +8,7 @@ metadata:
     develapp.io/binding: package-purl
     develapp.io/generator: sbobforge@1.0.0
     develapp.io/grammar-lock-sha256: 8e5651bf16ecf80ab37c143263072547922c294ad593ca17fe68cdef116ffe57
-    develapp.io/behavior-hash: 028962faccfd55c92fd648d3a454fa3125dbf5adc96b4ffd946a8457a5b85ca7
+    develapp.io/behavior-hash: 0b385fe41a614f50a41c37fe56450eeea83ad0f1236f8aa1ec0f86411b2109d7
 spec:
   architectures: [amd64]
   imageID: pkg:pypi/example-py-core@1.0.0
@@ -20,6 +20,8 @@ spec:
       flags: [O_WRONLY, O_CREAT, O_TRUNC]
     - path: /etc/app/config.json
       flags: [O_RDONLY]
+    - path: "/tmp/⋯"
+      flags: [O_DIRECTORY, O_CREAT]
     - path: /var/log/app.log
       flags: [O_WRONLY, O_CREAT, O_TRUNC]
     - path: /var/log/other.log
@@ -30,6 +32,9 @@ spec:
       ports:
         - { port: 8080, protocol: TCP }
   egress:
+    - identifier: "*-egress"
+      type: external
+      ipAddresses: ["*"]
     - identifier: api.example.com-egress
       type: external
       dnsNames: [api.example.com]

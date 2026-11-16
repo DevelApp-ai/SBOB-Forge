@@ -37,7 +37,8 @@ public sealed record LoweredInvocation(
     string Protocol,
     NetDirection Direction,
     string? Reason,
-    string? UnrepresentablePrimitive);
+    string? UnrepresentablePrimitive,
+    string? ArgIdentifier = null);
 
 /// <summary>
 /// Shared lowering engine (TDS 7.3): matches invocations against a language
@@ -144,7 +145,7 @@ public static class CatalogLowering
         var resolved = Resolve(path, substitute);
         if (!resolved.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"open path is {KindName(resolved)}, not a constant literal");
+                $"open path is {KindName(resolved)}, not a constant literal", resolved);
         return new LoweredInvocation(
             rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
             resolved.Value, FlagsOf(rule), Array.Empty<string>(), true,
@@ -156,7 +157,7 @@ public static class CatalogLowering
         var path = Resolve(Arg(inv, 0) ?? new CallArg(ArgKind.Expression, "<missing>"), substitute);
         if (!path.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"open path is {KindName(path)}, not a constant literal");
+                $"open path is {KindName(path)}, not a constant literal", path);
 
         // File.Open(path, FileMode.X[, FileShare...]) — FileMode is a named enum member.
         var mode = Arg(inv, 1);
@@ -211,7 +212,7 @@ public static class CatalogLowering
         var resolvedPath = Resolve(path, substitute);
         if (!resolvedPath.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"open path is {KindName(resolvedPath)}, not a constant literal");
+                $"open path is {KindName(resolvedPath)}, not a constant literal", resolvedPath);
 
         var modeArg = Arg(inv, 1);
         string mode = "r";
@@ -242,7 +243,7 @@ public static class CatalogLowering
         var resolvedPath = Resolve(path, substitute);
         if (!resolvedPath.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"open path is {KindName(resolvedPath)}, not a constant literal");
+                $"open path is {KindName(resolvedPath)}, not a constant literal", resolvedPath);
 
         bool append = Arg(inv, 1) is { Kind: ArgKind.Identifier, Value: "true" };
         var flags = append
@@ -398,7 +399,7 @@ public static class CatalogLowering
         var resolved = Resolve(url, substitute);
         if (!resolved.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                $"request URL is {KindName(resolved)}, not a constant literal");
+                $"request URL is {KindName(resolved)}, not a constant literal", resolved);
 
         return EgressFromUrl(rule, resolved.Value)
             ?? Quarantined(rule, BehaviorPrimitive.Connect, inv,
@@ -436,7 +437,7 @@ public static class CatalogLowering
         else
         {
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                $"connect host is {KindName(resolvedFirst)}, not a constant literal");
+                $"connect host is {KindName(resolvedFirst)}, not a constant literal", resolvedFirst);
         }
 
         if (portText is null && rule.DefaultPort is int defaultPort)
@@ -467,7 +468,7 @@ public static class CatalogLowering
         var resolved = Resolve(addr, substitute);
         if (!resolved.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                $"dial address is {KindName(resolved)}, not a constant literal");
+                $"dial address is {KindName(resolved)}, not a constant literal", resolved);
         if (!TryHostColonPort(resolved.Value, out var host, out var port))
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
                 $"dial address '{resolved.Value}' is not a literal host:port");
@@ -529,7 +530,7 @@ public static class CatalogLowering
         var resolvedPath = Resolve(path, substitute);
         if (!resolvedPath.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"open path is {KindName(resolvedPath)}, not a constant literal");
+                $"open path is {KindName(resolvedPath)}, not a constant literal", resolvedPath);
 
         var flagsArg = Arg(inv, 1);
         if (flagsArg is null || flagsArg.Kind != ArgKind.Identifier)
@@ -633,7 +634,7 @@ public static class CatalogLowering
         var resolved = Resolve(path, substitute);
         if (!resolved.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"path/URL is {KindName(resolved)}, not a constant literal");
+                $"path/URL is {KindName(resolved)}, not a constant literal", resolved);
         var egress = EgressFromUrl(rule, resolved.Value);
         if (egress is not null) return egress;
         return new LoweredInvocation(
@@ -746,7 +747,7 @@ public static class CatalogLowering
         var resolved = Resolve(uriArg, substitute);
         if (!resolved.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                $"request URL is {KindName(resolved)}, not a constant literal");
+                $"request URL is {KindName(resolved)}, not a constant literal", resolved);
         return EgressFromUrl(rule, resolved.Value)
             ?? Quarantined(rule, BehaviorPrimitive.Connect, inv,
                 $"request URL '{resolved.Value}' is not an absolute http(s) URL");
@@ -783,7 +784,7 @@ public static class CatalogLowering
             var r = Resolve(a, substitute);
             if (!r.IsLiteral)
                 return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                    $"curl URL is {KindName(r)}, not a constant literal");
+                    $"curl URL is {KindName(r)}, not a constant literal", r);
             resolvedArgs.Add(r.Value);
         }
         foreach (var value in resolvedArgs)
@@ -804,7 +805,7 @@ public static class CatalogLowering
             var r = Resolve(a, substitute);
             if (!r.IsLiteral)
                 return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                    $"nc host/port is {KindName(r)}, not a constant literal");
+                    $"nc host/port is {KindName(r)}, not a constant literal", r);
             literals.Add(r.Value);
         }
         var operands = literals.Where(v => !v.StartsWith('-')).ToArray();
@@ -828,7 +829,7 @@ public static class CatalogLowering
             var r = Resolve(a, substitute);
             if (!r.IsLiteral)
                 return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                    $"ssh host is {KindName(r)}, not a constant literal");
+                    $"ssh host is {KindName(r)}, not a constant literal", r);
             literals.Add(r.Value);
         }
         var host = literals.FirstOrDefault(v => !v.StartsWith('-'));
@@ -902,7 +903,7 @@ public static class CatalogLowering
         var resolvedPath = Resolve(path, substitute);
         if (!resolvedPath.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"open path is {KindName(resolvedPath)}, not a constant literal");
+                $"open path is {KindName(resolvedPath)}, not a constant literal", resolvedPath);
 
         var flagsArg = Arg(inv, 1);
         if (flagsArg is null)
@@ -981,7 +982,7 @@ public static class CatalogLowering
         var resolvedHost = Resolve(host, substitute);
         if (!resolvedHost.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Connect, inv,
-                $"resolve host is {KindName(resolvedHost)}, not a constant literal");
+                $"resolve host is {KindName(resolvedHost)}, not a constant literal", resolvedHost);
 
         int? port = null;
         if (Arg(inv, 1) is { } service)
@@ -1063,7 +1064,7 @@ public static class CatalogLowering
         var resolved = Resolve(path, substitute);
         if (!resolved.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"ifstream path is {KindName(resolved)}, not a constant literal");
+                $"ifstream path is {KindName(resolved)}, not a constant literal", resolved);
         return new LoweredInvocation(
             rule.Id, LiftOutcome.Event, BehaviorPrimitive.Open,
             resolved.Value, new[] { "O_RDONLY" }, Array.Empty<string>(), true,
@@ -1079,7 +1080,7 @@ public static class CatalogLowering
         var resolvedPath = Resolve(path, substitute);
         if (!resolvedPath.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"ofstream path is {KindName(resolvedPath)}, not a constant literal");
+                $"ofstream path is {KindName(resolvedPath)}, not a constant literal", resolvedPath);
 
         var flags = new List<string> { "O_WRONLY", "O_CREAT" };
         var mask = Arg(inv, 1);
@@ -1125,7 +1126,7 @@ public static class CatalogLowering
         var resolvedPath = Resolve(path, substitute);
         if (!resolvedPath.IsLiteral)
             return Quarantined(rule, BehaviorPrimitive.Open, inv,
-                $"fstream path is {KindName(resolvedPath)}, not a constant literal");
+                $"fstream path is {KindName(resolvedPath)}, not a constant literal", resolvedPath);
 
         var mask = Arg(inv, 1);
         if (mask is null)
@@ -1173,10 +1174,19 @@ public static class CatalogLowering
     private static IEnumerable<string> SplitMask(string mask) =>
         mask.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static LoweredInvocation Quarantined(CatalogRule rule, BehaviorPrimitive primitive, InvocationDecl inv, string reason) => new(
+    /// <summary>
+    /// Quarantined candidate. Carries the rule's static flags (usable by a declared
+    /// placeholder policy lift, SBOB-Forge #49) and, at path/URL/host sites, the
+    /// offending identifier (<paramref name="arg"/>) when the value is a plain
+    /// identifier — the variable-identity key a netPolicies/pathPolicies entry
+    /// matches. Mode/flag/port complaints pass no arg: those never lift.
+    /// </summary>
+    private static LoweredInvocation Quarantined(
+        CatalogRule rule, BehaviorPrimitive primitive, InvocationDecl inv, string reason, CallArg? arg = null) => new(
         rule.Id, LiftOutcome.Quarantine, primitive,
-        null, Array.Empty<string>(), Array.Empty<string>(), false,
-        null, null, "", NetDirection.Egress, reason, null);
+        null, FlagsOf(rule), Array.Empty<string>(), false,
+        null, null, "", NetDirection.Egress, reason, null,
+        arg is { Kind: ArgKind.Identifier } ? arg.Value : null);
 
     private static string KindName(CallArg arg) => arg.Kind switch
     {

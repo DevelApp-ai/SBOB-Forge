@@ -77,7 +77,7 @@ public static class Program
                                 [--target-os <os>] [--check] [--strict] [--frozen]
               sbobforge validate <file.sbob.yaml>
               sbobforge convert <file.sbob.yaml> <out.yaml>
-              sbobforge gate <file.sbob.yaml> [--allow <host|suffix|ip>]…
+              sbobforge gate <file.sbob.yaml> [--allow <host|suffix|ip|pattern>]…
 
             exit codes: 0 ok, 1 usage, 2 parse/validation error, 3 drift (--check),
                         4 quarantine (--strict), 5 lock mismatch (--frozen),
