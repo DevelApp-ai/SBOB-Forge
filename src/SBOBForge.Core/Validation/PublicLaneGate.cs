@@ -25,6 +25,9 @@ namespace SBOBForge.Core.Validation;
 /// Loopback (`localhost`, 127.0.0.0/8, ::1) is ALLOWED by default: every test
 /// suite dials loopback fixtures, loopback reveals no estate topology, and
 /// forbidding it would make the gate noise. Everything else private fails.
+/// Wildcard destinations (SBOB-Forge #49 tier-P egress, e.g. '⋯' or
+/// '*.internal') also fail: a wildcard names no reviewable target on a public
+/// lane — publishing one is a reviewed `--allow` decision.
 /// </summary>
 public static class PublicLaneGate
 {
@@ -114,6 +117,13 @@ public static class PublicLaneGate
         // DNS name rules.
         var host = value.ToLowerInvariant();
         if (host == "localhost") return null;
+        // Wildcard destinations (SBOB-Forge #49 declared dynamic-egress placeholders, Lars
+        // 2026-11-16): a tier-P pattern — bare segment wildcard '⋯' (spec 5.4) or a constrained
+        // pattern like '*.internal' — honestly declares dynamic egress, but a wildcard names no
+        // reviewable target, so the public lane rejects it like any other un-reviewable
+        // destination. Publishing it is a reviewed --allow decision, visible in the diff.
+        if (host.Contains('*') || host.Contains("⋯"))
+            return "wildcard destination (declared dynamic egress — reviewed --allow required)";
         if (host.IndexOf('.') < 0) return "bare single-label hostname (internal service name)";
         foreach (var suffix in PrivateSuffixes)
             if (host.EndsWith(suffix, StringComparison.Ordinal))
