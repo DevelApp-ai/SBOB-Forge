@@ -78,7 +78,36 @@ public sealed class SbobForgeConfig
                 throw new InvalidDataException($"netPolicies id '{p.Id}' is declared more than once: {path}");
             if (p.Emit.Contains('/') || p.Emit.Contains(':') || p.Emit.Any(char.IsWhiteSpace))
                 throw new InvalidDataException($"netPolicies entry '{p.Id}' emit '{p.Emit}' is not a DNS-name pattern (no scheme, path or whitespace): {path}");
+            if (!IsSpec58DnsPattern(p.Emit))
+                throw new InvalidDataException(
+                    $"netPolicies entry '{p.Id}' emit '{p.Emit}' is not a spec 5.8 DNS pattern (allowed: a plain name, " +
+                    "'*.suffix', 'prefix.*', 'a.⋯.b.'; bare '⋯' or '*' = the any-peer declaration): " + path);
         }
+    }
+
+    /// <summary>
+    /// Spec 5.8 DNS wildcard shapes, mirroring the downstream contract (sbobctl
+    /// compileDnsPattern): plain name, leading '*.suffix', trailing 'prefix.*',
+    /// or '⋯' between two labels ('a.⋯.b.'). The bare '⋯'/'*' any-peer
+    /// declaration is accepted separately (it never lands in dnsNames).
+    /// </summary>
+    private static bool IsSpec58DnsPattern(string emit)
+    {
+        if (emit == "⋯" || emit == "*") return true; // the any-peer declaration
+        if (!emit.Contains('*') && !emit.Contains("⋯")) return true; // plain name
+        if (emit.StartsWith("*.") && emit.Length > 2)
+            return !emit[2..].Contains('*') && !emit[2..].Contains("⋯");
+        if (emit.EndsWith(".*") && emit.Length > 2)
+            return !emit[..^2].Contains('*') && !emit[..^2].Contains("⋯");
+        if (emit.Contains("⋯"))
+        {
+            var parts = emit.Split("⋯");
+            return parts.Length == 2
+                && parts[0].Length > 0 && parts[1].Length > 0
+                && parts[0].EndsWith('.') && parts[1].StartsWith('.')
+                && !parts[0].Contains('*') && !parts[1].Contains('*');
+        }
+        return false; // mid-'*' or multi-token shapes are not representable downstream
     }
 
     /// <summary>Content hash of the config file: part of behavior-hash input (TDS 8.3).</summary>
@@ -122,7 +151,13 @@ public sealed class NetPolicy
     /// <summary>The identifier at the quarantine site (variable-identity matching).</summary>
     public string Match { get; set; } = "";
 
-    /// <summary>The emitted DNS-name pattern: bare '⋯' (spec 5.4 SegmentWildcard) or constrained, e.g. '*.internal'.</summary>
+    /// <summary>
+    /// The emitted destination pattern. The bare form '⋯' (or '*') is the declared
+    /// any-peer placeholder and materializes as the spec 5.7 any-peer entry
+    /// (ipAddresses: ["*"]) — spec 5.8 admits '⋯' in DNS patterns only between two
+    /// labels. Constrained patterns must be spec 5.8 DNS shapes: '*.suffix',
+    /// 'prefix.*', 'a.⋯.b.', or a plain name.
+    /// </summary>
     public string Emit { get; set; } = "";
 }
 
