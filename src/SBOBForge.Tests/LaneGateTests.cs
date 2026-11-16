@@ -44,6 +44,33 @@ public class LaneGateTests
         Assert.Empty(Core.Validation.PublicLaneGate.Check(yaml));
     }
 
+    // ---- wildcard destinations (SBOB-Forge #49 tier-P egress, Lars 2026-11-16) ----
+    // A wildcard honestly declares dynamic egress but names no reviewable target:
+    // the public lane rejects it like any other un-reviewable destination, and
+    // publishing one is a reviewed --allow decision.
+
+    [Theory]
+    [InlineData("⋯")]
+    [InlineData("*.example.com")]
+    [InlineData("*.internal")]
+    public void WildcardDestinationsFail(string host)
+    {
+        var violations = Core.Validation.PublicLaneGate.Check(Egress(host));
+        var v = Assert.Single(violations);
+        Assert.Equal("egress", v.Section);
+        Assert.Equal("dnsNames", v.Field);
+        Assert.Equal(host, v.Value);
+        Assert.Contains("wildcard destination", v.Rule);
+    }
+
+    [Fact]
+    public void WildcardDestinationPassesWithReviewedAllow()
+    {
+        var yaml = Egress("⋯");
+        Assert.Empty(Core.Validation.PublicLaneGate.Check(yaml, new[] { "⋯" }));
+        Assert.Single(Core.Validation.PublicLaneGate.Check(yaml, new[] { "api.example.com" }));
+    }
+
     [Fact]
     public void LoopbackIsAllowedByDefault()
     {
@@ -159,19 +186,37 @@ public class LaneGateTests
     {
         // Every committed golden must pass the public-lane gate: the fixtures are
         // our own published dogfood and double as the gate's regression corpus.
+        // Since SBOB-Forge #49, the two forwarding fixtures carry a declared
+        // tier-P wildcard egress ("⋯") — a wildcard names no reviewable target,
+        // so the gate rejects it bare and the golden passes only with the
+        // reviewed --allow (exactly how a publishing repo would carry it).
         var dir = (System.IO.DirectoryInfo?)new System.IO.DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "SBOBForge.sln")))
             dir = dir.Parent;
         if (dir is null)
             throw new System.IO.FileNotFoundException("SBOBForge.sln not found in any parent of the test assembly directory");
         var examples = System.IO.Path.Combine(dir.FullName, "examples");
+        var declaredWildcardGoldens = new[]
+        {
+            System.IO.Path.Combine(examples, "dotnet-xunit-fixture", "sbob", "example-core.linux.sbob.yaml"),
+            System.IO.Path.Combine(examples, "python-pytest-fixture", "sbob", "example-py-core.linux.sbob.yaml"),
+        };
         var goldenCount = 0;
         foreach (var golden in System.IO.Directory.EnumerateFiles(examples, "*.sbob.yaml", System.IO.SearchOption.AllDirectories))
         {
             goldenCount++;
             var violations = Core.Validation.PublicLaneGate.Check(System.IO.File.ReadAllText(golden));
-            Assert.True(violations.Count == 0,
-                $"{golden}: {string.Join("; ", violations.Select(v => $"{v.Section}.{v.Field} '{v.Value}' — {v.Rule}"))}");
+            if (violations.Count == 0) continue;
+            if (!declaredWildcardGoldens.Contains(golden))
+                Assert.Fail(
+                    $"{golden}: {string.Join("; ", violations.Select(v => $"{v.Section}.{v.Field} '{v.Value}' — {v.Rule}"))}");
+            // the forwarding fixtures: every violation must be the declared wildcard,
+            // and the reviewed allow list makes them clean
+            Assert.All(violations, v => Assert.Contains("wildcard destination", v.Rule));
+            var allowed = Core.Validation.PublicLaneGate.Check(
+                System.IO.File.ReadAllText(golden), violations.Select(v => v.Value).Distinct());
+            Assert.True(allowed.Count == 0,
+                $"{golden} with declared allows: {string.Join("; ", allowed.Select(v => $"{v.Section}.{v.Field} '{v.Value}' — {v.Rule}"))}");
         }
         Assert.True(goldenCount >= 13, $"expected at least 13 fixture goldens, found {goldenCount}");
     }
