@@ -88,10 +88,14 @@ public class EndToEndTests
         Assert.Equal(ResolutionTier.Pattern, exec.Tier);
 
         // network: literal https egress with default port; literal TcpListener ingress;
-        // identifier-URL egress lifted through netPolicies to a bare wildcard (SBOB-Forge #49)
+        // identifier-URL egress lifted through netPolicies to the bare any-peer wildcard
+        // (SBOB-Forge #49): spec 5.8 admits '⋯' in DNS patterns only between two
+        // labels, so the bare declaration materializes as the spec 5.7 any-peer entry
         Assert.Equal(2, result.Ir.Egress.Count);
         Assert.Contains(result.Ir.Egress, n => n.DnsName == "api.example.com" && n.Port == 443);
-        var wildcard = Assert.Single(result.Ir.Egress, n => n.DnsName == "⋯");
+        var wildcard = Assert.Single(result.Ir.Egress, n => n.IpAddresses.Count > 0);
+        Assert.Equal("", wildcard.DnsName);
+        Assert.Equal(new[] { "*" }, wildcard.IpAddresses);
         Assert.Null(wildcard.Port);
         Assert.Equal(ResolutionTier.Pattern, wildcard.Tier);
         Assert.Contains(wildcard.Provenance, p => p.Tier == ResolutionTier.Pattern
@@ -317,8 +321,10 @@ public class EndToEndTests
 
         Assert.Equal(2, result.Ir.Egress.Count);
         Assert.Contains(result.Ir.Egress, n => n.DnsName == "api.example.com" && n.Port == 443);
-        // identifier-URL egress lifted through netPolicies (SBOB-Forge #49)
-        var wildcard = Assert.Single(result.Ir.Egress, n => n.DnsName == "⋯");
+        // identifier-URL egress lifted through netPolicies to the any-peer entry (SBOB-Forge #49)
+        var wildcard = Assert.Single(result.Ir.Egress, n => n.IpAddresses.Count > 0);
+        Assert.Equal("", wildcard.DnsName);
+        Assert.Equal(new[] { "*" }, wildcard.IpAddresses);
         Assert.Null(wildcard.Port);
         Assert.Equal(ResolutionTier.Pattern, wildcard.Tier);
         Assert.Contains(wildcard.Provenance, p => p.CatalogRuleId == "forwarded-request-url");
