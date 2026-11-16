@@ -156,13 +156,17 @@ public class DynamicDestinationPolicyTests
     // ---- pipeline: the lifts -------------------------------------------------------
 
     [Fact]
-    public void NetPolicyLiftsIdentifierUrlToTierPWildcardEgress()
+    public void NetPolicyLiftsIdentifierUrlToTierPAnyPeerEgress()
     {
         using var temp = new TempDir(SyntheticForwardingFixture(NetPoliciesConfig));
         var result = Generate(temp.Path);
 
         var egress = Assert.Single(result.Ir.Egress);
-        Assert.Equal("⋯", egress.DnsName);
+        // The bare '⋯' declaration materializes as the spec 5.7 any-peer entry:
+        // spec 5.8 (sbobctl compileDnsPattern, the downstream contract) admits '⋯'
+        // in DNS patterns only between two labels, so it cannot land in dnsNames.
+        Assert.Equal("", egress.DnsName);
+        Assert.Equal(new[] { "*" }, egress.IpAddresses);
         Assert.Null(egress.Port);
         Assert.Equal(NetDirection.Egress, egress.Direction);
         Assert.Equal(ResolutionTier.Pattern, egress.Tier);
@@ -173,8 +177,10 @@ public class DynamicDestinationPolicyTests
         Assert.Equal("forwarded-request-url", provenance.CatalogRuleId);
         Assert.Equal("sut:Example.Core.Sut.ForwardingClient.Forward", provenance.TestId);
 
-        Assert.Contains("dnsNames: [\"⋯\"]", result.SbobYaml);
-        Assert.DoesNotContain("ports:", result.SbobYaml.Split("egress:", 2)[1]);
+        var yamlEgress = result.SbobYaml.Split("egress:", 2)[1];
+        Assert.Contains("ipAddresses: [\"*\"]", yamlEgress);
+        Assert.DoesNotContain("dnsNames", yamlEgress);
+        Assert.DoesNotContain("ports:", yamlEgress);
     }
 
     [Fact]
@@ -252,6 +258,15 @@ public class DynamicDestinationPolicyTests
         AssertInvalid(baseJson.Replace("\"allowParseError\": []",
             "\"netPolicies\": [ { \"id\": \"p1\", \"match\": \"u\", \"emit\": \"https://x.example.com\" } ], \"allowParseError\": []"),
             "not a DNS-name pattern");
+        AssertInvalid(baseJson.Replace("\"allowParseError\": []",
+            "\"netPolicies\": [ { \"id\": \"p1\", \"match\": \"u\", \"emit\": \"x*.example.com\" } ], \"allowParseError\": []"),
+            "spec 5.8");
+        AssertInvalid(baseJson.Replace("\"allowParseError\": []",
+            "\"netPolicies\": [ { \"id\": \"p1\", \"match\": \"u\", \"emit\": \"*.a*.example.com\" } ], \"allowParseError\": []"),
+            "spec 5.8");
+        AssertInvalid(baseJson.Replace("\"allowParseError\": []",
+            "\"netPolicies\": [ { \"id\": \"p1\", \"match\": \"u\", \"emit\": \"⋯.example.com\" } ], \"allowParseError\": []"),
+            "spec 5.8");
         AssertInvalid(baseJson.Replace("\"allowParseError\": []",
             "\"netPolicies\": [ { \"id\": \"p\", \"match\": \"u\", \"emit\": \"⋯\" }, { \"id\": \"p\", \"match\": \"v\", \"emit\": \"⋯\" } ], \"allowParseError\": []"),
             "more than once");
