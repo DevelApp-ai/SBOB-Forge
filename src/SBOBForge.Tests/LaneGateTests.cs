@@ -72,6 +72,25 @@ public class LaneGateTests
     }
 
     [Fact]
+    public void AnyPeerIpWildcardFailsAndPassesWithReviewedAllow()
+    {
+        // The bare netPolicy declaration materializes as ipAddresses: ["*"]
+        // (spec 5.7 any-peer entry — SBOB-Forge #49): the gate rejects it bare
+        // and the reviewed allow makes it clean, same contract as DNS wildcards.
+        var yaml = Header +
+            "  egress:\n" +
+            "    - identifier: x-egress\n" +
+            "      type: external\n" +
+            "      ipAddresses: [\"*\"]\n";
+        var v = Assert.Single(Core.Validation.PublicLaneGate.Check(yaml));
+        Assert.Equal("egress", v.Section);
+        Assert.Equal("ipAddresses", v.Field);
+        Assert.Equal("*", v.Value);
+        Assert.Contains("wildcard destination", v.Rule);
+        Assert.Empty(Core.Validation.PublicLaneGate.Check(yaml, new[] { "*" }));
+    }
+
+    [Fact]
     public void LoopbackIsAllowedByDefault()
     {
         var yaml = Egress("localhost", "127.0.0.1", "::1");
@@ -187,7 +206,8 @@ public class LaneGateTests
         // Every committed golden must pass the public-lane gate: the fixtures are
         // our own published dogfood and double as the gate's regression corpus.
         // Since SBOB-Forge #49, the two forwarding fixtures carry a declared
-        // tier-P wildcard egress ("⋯") — a wildcard names no reviewable target,
+        // tier-P any-peer entry (ipAddresses: ["*"], materialized from the bare
+        // '⋯' netPolicy declaration) — a wildcard names no reviewable target,
         // so the gate rejects it bare and the golden passes only with the
         // reviewed --allow (exactly how a publishing repo would carry it).
         var dir = (System.IO.DirectoryInfo?)new System.IO.DirectoryInfo(AppContext.BaseDirectory);
