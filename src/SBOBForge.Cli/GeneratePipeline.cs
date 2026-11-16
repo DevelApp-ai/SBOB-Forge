@@ -166,8 +166,35 @@ public static class GeneratePipeline
                     unrepresentable.Add(new UnrepresentableItem(lowered.UnrepresentablePrimitive ?? "unknown", file, line, testId));
                     return;
                 case LiftOutcome.Quarantine:
+                {
+                    // Declared dynamic-destination placeholder policies (SBOB-Forge #49, TDS 7.3 tier P):
+                    // a quarantine whose destination arg is a plain identifier lifts through a
+                    // matching policy — variable identity only, never declaration alone, so an
+                    // undeclared dynamic destination still fail-closes into the coverage report.
+                    if (lowered.ArgIdentifier is { Length: > 0 } identifier)
+                    {
+                        if (lowered.Primitive == BehaviorPrimitive.Connect
+                            && config.NetPolicies.FirstOrDefault(p => string.Equals(p.Match, identifier, StringComparison.Ordinal)) is { } netPolicy)
+                        {
+                            var provenance = new List<Provenance> { new(testId, file, line, ResolutionTier.Pattern, netPolicy.Id) };
+                            egress.Add(new NetEvent(netPolicy.Emit, Array.Empty<string>(), null, "TCP", NetDirection.Egress, ResolutionTier.Pattern, provenance));
+                            return;
+                        }
+                        if (lowered.Primitive == BehaviorPrimitive.Open
+                            && config.PathPolicies.FirstOrDefault(p => string.Equals(p.Match, identifier, StringComparison.Ordinal)) is { } pathPolicy)
+                        {
+                            if (string.IsNullOrWhiteSpace(pathPolicy.Id))
+                                throw new InvalidDataException(
+                                    $"pathPolicies entry '{{ \"match\": \"{pathPolicy.Match}\" ... }}' lifts identifier-valued open paths " +
+                                    $"and must declare an id — it is the coverage-row rule (SBOB-Forge #49): {options.ConfigPath}");
+                            var provenance = new List<Provenance> { new(testId, file, line, ResolutionTier.Pattern, pathPolicy.Id) };
+                            opens.Add(new OpenEvent(pathPolicy.Emit, lowered.Flags, ResolutionTier.Pattern, provenance));
+                            return;
+                        }
+                    }
                     quarantined.Add(new QuarantinedItem(lowered.Primitive, lowered.Reason ?? "unresolvable", file, line, testId, lowered.CatalogRuleId));
                     return;
+                }
                 case LiftOutcome.Event:
                     break;
             }
