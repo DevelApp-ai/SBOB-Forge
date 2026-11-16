@@ -177,7 +177,16 @@ public static class GeneratePipeline
                             && config.NetPolicies.FirstOrDefault(p => string.Equals(p.Match, identifier, StringComparison.Ordinal)) is { } netPolicy)
                         {
                             var provenance = new List<Provenance> { new(testId, file, line, ResolutionTier.Pattern, netPolicy.Id) };
-                            egress.Add(new NetEvent(netPolicy.Emit, Array.Empty<string>(), null, "TCP", NetDirection.Egress, ResolutionTier.Pattern, provenance));
+                            // Spec 5.8 (per sbobctl compileDnsPattern, the downstream contract —
+                            // TDS design principle 6) admits '⋯' in DNS patterns only BETWEEN two
+                            // labels ("a.⋯.b."), so a bare '⋯'/'*' declaration cannot land in
+                            // dnsNames. The bare form is the spec 5.7 any-peer entry instead:
+                            // ipAddresses: ["*"], no ports — the honest shape of "request-derived
+                            // destination, any peer", and it round-trips sbobctl validate.
+                            if (netPolicy.Emit == "⋯" || netPolicy.Emit == "*")
+                                egress.Add(new NetEvent("", new[] { "*" }, null, "TCP", NetDirection.Egress, ResolutionTier.Pattern, provenance));
+                            else
+                                egress.Add(new NetEvent(netPolicy.Emit, Array.Empty<string>(), null, "TCP", NetDirection.Egress, ResolutionTier.Pattern, provenance));
                             return;
                         }
                         if (lowered.Primitive == BehaviorPrimitive.Open
