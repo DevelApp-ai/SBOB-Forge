@@ -26,8 +26,9 @@ public static class CanonicalSbobEmitter
             && ir.Coverage.Quarantined.Count > 0)
         {
             throw new EmitException(
-                "Section-shadowed profile: every candidate entry is quarantined. " +
-                "Refusing to emit an empty profile silently — inspect the coverage report (TDS 8.4).");
+                "Section-shadowed profile: every candidate entry is quarantined and none lifted " +
+                "through a declared placeholder policy (SBOB-Forge #49). Refusing to emit an empty " +
+                "profile silently — inspect the coverage report (TDS 8.4).");
         }
 
         var sb = new StringBuilder();
