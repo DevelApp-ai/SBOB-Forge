@@ -59,10 +59,18 @@ public class EndToEndTests
         var result = Generate(temp.Path);
 
         // opens: tier-P policy path, tier-L literal paths (SUT + test-attributed), theory-case paths
-        Assert.Equal(4, result.Ir.Opens.Count);
+        Assert.Equal(5, result.Ir.Opens.Count);
         Assert.Contains(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json"
             && o.Tier == ResolutionTier.Pattern
             && o.Flags.SequenceEqual(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }));
+        // identifier-valued open lifted through the declared pathPolicy (SBOB-Forge #49):
+        // tier-P wildcard, the rule's static flags, the policy id as the coverage-row rule
+        var snapshot = Assert.Single(result.Ir.Opens, o => o.Path == "/tmp/⋯");
+        Assert.Equal(ResolutionTier.Pattern, snapshot.Tier);
+        Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, snapshot.Flags);
+        Assert.Contains(snapshot.Provenance, p => p.Tier == ResolutionTier.Pattern
+            && p.CatalogRuleId == "snapshot-temp-dir"
+            && p.TestId.StartsWith("sut:Example.Core.Sut.ForwardingClient"));
         var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
         Assert.Equal(ResolutionTier.Literal, config.Tier);
         Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
@@ -79,10 +87,15 @@ public class EndToEndTests
         Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
         Assert.Equal(ResolutionTier.Pattern, exec.Tier);
 
-        // network: literal https egress with default port; literal TcpListener ingress
-        var egress = Assert.Single(result.Ir.Egress);
-        Assert.Equal("api.example.com", egress.DnsName);
-        Assert.Equal(443, egress.Port);
+        // network: literal https egress with default port; literal TcpListener ingress;
+        // identifier-URL egress lifted through netPolicies to a bare wildcard (SBOB-Forge #49)
+        Assert.Equal(2, result.Ir.Egress.Count);
+        Assert.Contains(result.Ir.Egress, n => n.DnsName == "api.example.com" && n.Port == 443);
+        var wildcard = Assert.Single(result.Ir.Egress, n => n.DnsName == "⋯");
+        Assert.Null(wildcard.Port);
+        Assert.Equal(ResolutionTier.Pattern, wildcard.Tier);
+        Assert.Contains(wildcard.Provenance, p => p.Tier == ResolutionTier.Pattern
+            && p.CatalogRuleId == "forwarded-request-url");
         var ingress = Assert.Single(result.Ir.Ingress);
         Assert.Equal(8080, ingress.Port);
 
@@ -276,10 +289,16 @@ public class EndToEndTests
         using var temp = new TempDir(CopyFixtureToTemp("python-pytest-fixture"));
         var result = Generate(temp.Path);
 
-        Assert.Equal(4, result.Ir.Opens.Count);
+        Assert.Equal(5, result.Ir.Opens.Count);
         var cache = Assert.Single(result.Ir.Opens, o => o.Path == "/app/⋯/cache/last.json");
         Assert.Equal(ResolutionTier.Pattern, cache.Tier);
         Assert.Equal(new[] { "O_WRONLY", "O_CREAT", "O_TRUNC" }, cache.Flags);
+
+        // identifier-valued open lifted through the declared pathPolicy (SBOB-Forge #49)
+        var snapshot = Assert.Single(result.Ir.Opens, o => o.Path == "/tmp/⋯");
+        Assert.Equal(ResolutionTier.Pattern, snapshot.Tier);
+        Assert.Equal(new[] { "O_DIRECTORY", "O_CREAT" }, snapshot.Flags);
+        Assert.Contains(snapshot.Provenance, p => p.CatalogRuleId == "snapshot-temp-dir");
 
         var config = Assert.Single(result.Ir.Opens, o => o.Path == "/etc/app/config.json");
         Assert.Equal(new[] { "O_RDONLY" }, config.Flags);
@@ -296,9 +315,15 @@ public class EndToEndTests
         Assert.Equal("/usr/bin/git", exec.Path);
         Assert.Equal(new[] { "/usr/bin/git", "status" }, exec.Args);
 
-        Assert.Equal("api.example.com", Assert.Single(result.Ir.Egress).DnsName);
-        Assert.Equal(443, Assert.Single(result.Ir.Egress).Port);
-        Assert.Equal(8080, Assert.Single(result.Ir.Ingress).Port);
+        Assert.Equal(2, result.Ir.Egress.Count);
+        Assert.Contains(result.Ir.Egress, n => n.DnsName == "api.example.com" && n.Port == 443);
+        // identifier-URL egress lifted through netPolicies (SBOB-Forge #49)
+        var wildcard = Assert.Single(result.Ir.Egress, n => n.DnsName == "⋯");
+        Assert.Null(wildcard.Port);
+        Assert.Equal(ResolutionTier.Pattern, wildcard.Tier);
+        Assert.Contains(wildcard.Provenance, p => p.CatalogRuleId == "forwarded-request-url");
+        var ingress = Assert.Single(result.Ir.Ingress);
+        Assert.Equal(8080, ingress.Port);
 
         Assert.Contains(result.Ir.Coverage.Quarantined,
             q => q.Reason.Contains("interpolated") && q.File.EndsWith("config_store.py"));
