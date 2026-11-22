@@ -4,14 +4,11 @@
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 2,
+  "SutFiles": 1,
+  "FilesWithIntent": 1,
+  "UntestedSutFiles": [],
   "Quarantined": [],
   "Noise": [
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/test_status_client.py",
-      "Line": 15,
-      "TestId": "tests/test_status_client.py::StatusClientTests::test_legacy_shell"
-    },
     {
       "Description": "test helper (not an entry method): status_client.shell_out",
       "File": "tests/test_status_client.py",
@@ -28,5 +25,13 @@
       "TestId": "sut:status_client.remove_temp",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/test_status_client.py::StatusClientTests::test_legacy_shell",
+      "File": "tests/test_status_client.py",
+      "Line": 15
+    }
+  ],
+  "MockShadowed": []
 }

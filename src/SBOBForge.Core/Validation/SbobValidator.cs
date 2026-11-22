@@ -81,6 +81,19 @@ public static class SbobValidator
                 continue;
             }
 
+            // dnsNames wildcard tokens (spec 5.8; SBOB-Forge #6 negative corpus):
+            // leading *.<suffix>, mid <a>.⋯.<b>, or trailing <prefix>.*.
+            // '**' is a recursive glob and MUST be rejected; a mid-label '*' is
+            // non-standard (bind/coredns reject it) and must be written '⋯';
+            // '⋯' must occupy one whole dot-label with labels on both sides.
+            if (trimmed.StartsWith("dnsNames: [", StringComparison.Ordinal)
+                && (section is "ingress" or "egress"))
+            {
+                foreach (var d in SplitFlow(trimmed, "dnsNames: ["))
+                    ValidateDnsName(d, errors, section);
+                continue;
+            }
+
             if (trimmed.StartsWith("architectures: [", StringComparison.Ordinal))
             {
                 foreach (var a in SplitFlow(trimmed, "architectures: ["))
@@ -147,6 +160,51 @@ public static class SbobValidator
         foreach (var seg in value.Split('/'))
             if (seg.Contains('\u22EF') && seg != "\u22EF")
                 errors.Add($"{field}: '{value}': '⋯' must occupy a whole path segment");
+    }
+
+    /// <summary>
+    /// dnsNames token legality (spec 5.8): '**' MUST be rejected; a '*' may only
+    /// lead (*.suffix, exactly one label) or trail (prefix.*); a mid-label '*' is
+    /// non-standard and must be written '⋯'; and the mid '⋯' form must be
+    /// &lt;a&gt;.⋯.&lt;b&gt; — one whole dot-label with at least one label on each side.
+    /// </summary>
+    private static void ValidateDnsName(string d, List<string> errors, string section)
+    {
+        var err = section + ".dnsNames";
+        if (d.Contains("...", StringComparison.Ordinal))
+        {
+            errors.Add($"{err}: '{d}': three-dot run is not the spec 5 wildcard; use U+22EF ('⋯')");
+            return;
+        }
+        if (d.Contains("**", StringComparison.Ordinal))
+        {
+            errors.Add($"{err}: '{d}': '**' (recursive glob) is rejected; use leading *.<suffix>, mid <a>.⋯.<b>, or trailing <prefix>.*");
+            return;
+        }
+        var labels = d.Split('.');
+        if (d.Contains('*'))
+        {
+            // Legal positions: bare leading label (index 0) or final label; trailing
+            // dot form may leave an empty last label after the '*'.
+            var starIdx = Array.FindIndex(labels, l => l.Contains('*'));
+            if (labels[starIdx] != "*")
+                errors.Add($"{err}: '{d}': '*' must occupy a whole dot-label");
+            else if (starIdx != 0 && !(starIdx == labels.Length - 1
+                     || (starIdx == labels.Length - 2 && labels[^1].Length == 0)))
+                errors.Add($"{err}: '{d}': mid-label '*' is non-standard (spec 5.8); use '⋯' for the mid position");
+            return;
+        }
+        if (d.Contains('\u22EF'))
+        {
+            var starIdx = Array.FindIndex(labels, l => l.Contains('\u22EF'));
+            var trailingDot = labels[^1].Length == 0;
+            var lastLabel = trailingDot ? labels.Length - 2 : labels.Length - 1;
+            var legal = labels[starIdx] == "\u22EF"
+                && starIdx >= 1 // at least one label before (<a>.)
+                && lastLabel > starIdx; // at least one label after (.<b>)
+            if (!legal)
+                errors.Add($"{err}: '{d}': mid form must be <a>.⋯.<b> — one whole dot-label with labels on both sides");
+        }
     }
 
     private static string StripPrefix(string s, string prefix) =>

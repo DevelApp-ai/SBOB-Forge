@@ -4,6 +4,9 @@
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 4,
+  "SutFiles": 1,
+  "FilesWithIntent": 1,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -16,12 +19,6 @@
   ],
   "Noise": [
     {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/php/ConfigStoreTest.php",
-      "Line": 38,
-      "TestId": "tests/php/ConfigStoreTest.php::ConfigStoreTest::testLegacyPath"
-    },
-    {
       "Description": "test helper (not an entry method): this.markTestSkipped",
       "File": "tests/php/ConfigStoreTest.php",
       "Line": 40,
@@ -32,12 +29,6 @@
       "File": "tests/php/ConfigStoreTest.php",
       "Line": 41,
       "TestId": ""
-    },
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/php/ConfigStoreTest.php",
-      "Line": 47,
-      "TestId": "tests/php/ConfigStoreTest.php::ConfigStoreTest::testRequiresDatabase"
     },
     {
       "Description": "test helper (not an entry method): store.loadConfig",
@@ -55,5 +46,18 @@
       "TestId": "sut:Example.ConfigStore.cleanCache",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/php/ConfigStoreTest.php::ConfigStoreTest::testLegacyPath",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 38
+    },
+    {
+      "TestId": "tests/php/ConfigStoreTest.php::ConfigStoreTest::testRequiresDatabase",
+      "File": "tests/php/ConfigStoreTest.php",
+      "Line": 47
+    }
+  ],
+  "MockShadowed": []
 }

@@ -4,6 +4,9 @@
   "FilesAnalyzed": 5,
   "TestFiles": 1,
   "TestEntries": 3,
+  "SutFiles": 4,
+  "FilesWithIntent": 4,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -18,19 +21,13 @@
     {
       "Description": "harness API: Assert.NotNull",
       "File": "tests/ConfigStoreTests.cs",
-      "Line": 12,
+      "Line": 17,
       "TestId": "Example.Core.Tests.ConfigStoreTests.LoadsConfigFromEtc"
-    },
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/ConfigStoreTests.cs",
-      "Line": 15,
-      "TestId": "Example.Core.Tests.ConfigStoreTests.LegacyPathStillUsed"
     },
     {
       "Description": "test helper (not an entry method): File.ReadAllText",
       "File": "tests/ConfigStoreTests.cs",
-      "Line": 18,
+      "Line": 23,
       "TestId": ""
     }
   ],
@@ -42,6 +39,29 @@
       "Line": 13,
       "TestId": "sut:Example.Core.Sut.ConfigStore.Reset",
       "Rule": ""
+    }
+  ],
+  "Retired": [
+    {
+      "TestId": "Example.Core.Tests.ConfigStoreTests.LegacyPathStillUsed",
+      "File": "tests/ConfigStoreTests.cs",
+      "Line": 20
+    }
+  ],
+  "MockShadowed": [
+    {
+      "Kind": "nsubstitute",
+      "Detail": "Substitute.For",
+      "File": "tests/ConfigStoreTests.cs",
+      "Line": 13,
+      "TestId": "Example.Core.Tests.ConfigStoreTests.LoadsConfigFromEtc"
+    },
+    {
+      "Kind": "moq",
+      "Detail": "registryMock.VerifyAll",
+      "File": "tests/ConfigStoreTests.cs",
+      "Line": 15,
+      "TestId": "Example.Core.Tests.ConfigStoreTests.LoadsConfigFromEtc"
     }
   ]
 }

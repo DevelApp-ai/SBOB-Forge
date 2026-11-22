@@ -4,6 +4,9 @@
   "FilesAnalyzed": 4,
   "TestFiles": 1,
   "TestEntries": 1,
+  "SutFiles": 3,
+  "FilesWithIntent": 3,
+  "UntestedSutFiles": [],
   "Quarantined": [],
   "Noise": [
     {
@@ -11,12 +14,6 @@
       "File": "tests/com/example/ng/NgTests.java",
       "Line": 11,
       "TestId": "com.example.ng.tests.NgTests.appendsLog"
-    },
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/com/example/ng/NgTests.java",
-      "Line": 15,
-      "TestId": "com.example.ng.tests.NgTests.legacyRewriteStillUsed"
     },
     {
       "Description": "test helper (not an entry method): .LogWriter",
@@ -31,5 +28,13 @@
       "TestId": ""
     }
   ],
-  "Unrepresentable": []
+  "Unrepresentable": [],
+  "Retired": [
+    {
+      "TestId": "com.example.ng.tests.NgTests.legacyRewriteStillUsed",
+      "File": "tests/com/example/ng/NgTests.java",
+      "Line": 15
+    }
+  ],
+  "MockShadowed": []
 }

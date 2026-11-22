@@ -55,6 +55,7 @@ public static class Program
                 "generate" => CmdGenerate(args[1..]),
                 "validate" => CmdValidate(args[1..]),
                 "convert" => CmdConvert(args[1..]),
+                "explain" => CmdExplain(args[1..]),
                 "gate" => CmdGate(args[1..]),
                 _ => Usage($"unknown command '{command}'")
             };
@@ -77,9 +78,11 @@ public static class Program
                                 [--target-os <os>] [--check] [--strict] [--frozen]
               sbobforge validate <file.sbob.yaml>
               sbobforge convert <file.sbob.yaml> <out.yaml>
+              sbobforge explain <repoRoot> <identifier> [--config <path>] [--json]
               sbobforge gate <file.sbob.yaml> [--allow <host|suffix|ip|pattern>]…
 
-            exit codes: 0 ok, 1 usage, 2 parse/validation error, 3 drift (--check),
+            exit codes: 0 ok, 1 usage, 2 parse/validation error (also: no
+                        provenance rows matched the explain query), 3 drift (--check),
                         4 quarantine (--strict), 5 lock mismatch (--frozen),
                         6 public-lane disclosure (gate)
             """);
@@ -432,6 +435,48 @@ public static class Program
         if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
         File.WriteAllText(outPath, converted);
         Console.WriteLine($"converted {inPath} -> {outPath} (sbob.k8sstormcenter.io/v1 / {DialectConverter.SbobKind})");
+        return 0;
+    }
+
+    /// <summary>
+    /// Provenance lookup (TDS 8.3): explain why an entry (by identifier, exact
+    /// or substring) exists in a generated sbob. Reads the provenance sidecar
+    /// next to the sbob; correlates grammar/catalog versions from the lock.
+    /// </summary>
+    private static int CmdExplain(string[] args)
+    {
+        string? repoRoot = null, query = null, configPath = null;
+        var json = false;
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--config" when i + 1 < args.Length: configPath = args[++i]; break;
+                case "--json": json = true; break;
+                default:
+                    if (repoRoot is null) repoRoot = args[i];
+                    else if (query is null) query = args[i];
+                    else return Usage($"unknown option '{args[i]}'");
+                    break;
+            }
+        }
+        if (repoRoot is null) return Usage("missing <repoRoot> for 'explain'");
+        if (query is null) return Usage("missing <identifier> for 'explain'");
+        if (!Directory.Exists(repoRoot)) return Fail(1, $"no such directory: {repoRoot}");
+
+        var options = new ExplainOptions
+        {
+            RepoRoot = repoRoot,
+            Query = query,
+            ConfigPath = configPath,
+            JsonOutput = json
+        };
+        var result = ExplainPipeline.Run(options);
+        if (result.NotFound)
+        {
+            return Fail(2, $"no provenance rows matched '{query}' in {result.ProvenancePath}");
+        }
+        Console.Write(json ? ExplainPipeline.RenderJson(result) : ExplainPipeline.Render(result));
         return 0;
     }
 

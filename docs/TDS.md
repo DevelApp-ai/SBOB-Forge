@@ -407,7 +407,7 @@ spec:
 ### 8.3 Provenance and hashing
 
 - `develapp.io/behavior-hash` = sha256 over the **normalized IR** (not the YAML text): version tag, sorted event tuples with tiers, grammar-lock hash, config hash. Two runs over the same tree can only differ if one of those changed — the hash makes the difference attributable.
-- Provenance sidecar (`sbob/<package>.provenance.jsonl`): one record per emitted entry — `testId`s, file:line, tier, grammar, catalog rule id. Powers `sbobforge explain /etc/ld.so.cache` → "opened in Minotaur.Parser.DynamicLinkerProbe, exercised by 12 xUnit facts; Tier L".
+- Provenance sidecar (`sbob/<package>.provenance.jsonl`): one record per emitted entry — `testId`s, file:line, tier, grammar, catalog rule id. Powers `sbobforge explain <repoRoot> <identifier>` → "opened in Minotaur.Parser.DynamicLinkerProbe, exercised by 12 xUnit facts; Tier L" — reading the sidecar plus the pinned lock (`sbobforge.lock.json`) to report the parser/catalog grammar versions that produced the evidence. Exact identifier match first, case-insensitive substring fallback; a query with no rows exits 2 (TDS 13). Explain is strictly read-only: it never regenerates artifacts.
 
 ### 8.4 Deliberate defaults table
 
@@ -570,11 +570,16 @@ sbobforge validate <file…>                 # schema + self-lint + purl check
 sbobforge convert <file.sbob.yaml> <out>   # dialect bridge: registry dialect (TDS 10.4)
 sbobforge gate <file.sbob.yaml> [--allow <host|suffix|ip>]…
                                            # public-lane content gate (TDS 10.5)
-sbobforge explain <path-or-entry>          # provenance lookup
+sbobforge explain <repoRoot> <identifier> [--config <path>] [--json]
+                                           # provenance lookup (M7, TDS 8.3):
+                                           # entry → testIds, file:line, tier, catalog
+                                           # rule + pinned grammar versions;
+                                           # exact match first, case-insensitive
+                                           # substring fallback; no match → exit 2
 sbobforge version                         # tool + IR + catalog versions
 ```
 
-Exit codes: `0` ok · `2` parse/validation hard error · `3` drift detected (`--check`) · `4` quarantine non-empty (`--strict`) · `5` lock mismatch (`--frozen`) · `6` public-lane disclosure (`gate`, TDS 10.5).
+Exit codes: `0` ok · `2` parse/validation hard error (also: no provenance rows matched an `explain` query) · `3` drift detected (`--check`) · `4` quarantine non-empty (`--strict`) · `5` lock mismatch (`--frozen`) · `6` public-lane disclosure (`gate`, TDS 10.5).
 
 ---
 
