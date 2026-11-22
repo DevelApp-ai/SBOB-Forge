@@ -4,6 +4,9 @@
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 4,
+  "SutFiles": 1,
+  "FilesWithIntent": 1,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -15,12 +18,6 @@
     }
   ],
   "Noise": [
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/ps/config-store.tests.ps1",
-      "Line": 18,
-      "TestId": "tests/ps/config-store.tests.ps1::config store \u003E legacy path"
-    },
     {
       "Description": "test helper (not an entry method): .Add-Content",
       "File": "tests/ps/config-store.tests.ps1",
@@ -37,5 +34,13 @@
       "TestId": "sut:config-store.Remove-Cache",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/ps/config-store.tests.ps1::config store \u003E legacy path",
+      "File": "tests/ps/config-store.tests.ps1",
+      "Line": 18
+    }
+  ],
+  "MockShadowed": []
 }

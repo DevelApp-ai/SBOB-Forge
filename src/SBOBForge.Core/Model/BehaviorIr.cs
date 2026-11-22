@@ -41,24 +41,52 @@ public sealed record QuarantinedItem(
 /// <summary>Test-harness behavior excluded from sections but reported (TDS 7.4).</summary>
 public sealed record NoiseItem(string Description, string File, int Line, string TestId);
 
+/// <summary>
+/// Retired intent (M7 coverage report v1): a disabled/skipped test entry that
+/// contributed nothing to the profile (TDS 8.4 — the PR-visible record of
+/// "this suite knows about behavior but the entry is switched off").
+/// </summary>
+public sealed record RetiredItem(string TestId, string File, int Line);
+
+/// <summary>
+/// Mock-shadowed warning (M7 coverage report v1, TDS 7.4): a mock-framework API
+/// inside an enabled test entry. Mocks never lower; where a mock intercepts a
+/// SUT dependency the SUT's behavior is under-declared — a leading downstream
+/// false-positive source, so the site is surfaced as a warning, never silently
+/// absorbed as generic harness noise.
+/// </summary>
+public sealed record MockShadowItem(string Kind, string Detail, string File, int Line, string TestId);
+
 /// <summary>Primitives the spec v0.0.4 cannot represent (TDS 15): delete, rename, symlink, chmod.</summary>
 public sealed record UnrepresentableItem(string Primitive, string File, int Line, string TestId);
 
 /// <summary>
-/// Honest-coverage report (TDS 8.4, 15): what was lifted, what was not, and
-/// why.
+/// Honest-coverage report (TDS 8.4, 15; M7 v1): what was lifted, what was not,
+/// and why. v1 inventories (SBOB-Forge #6): quarantined, harness noise,
+/// retired, unrepresentable, mock-shadowed warnings; plus the intent ratio —
+/// <see cref="FilesWithIntent"/> SUT files (call sites of emitted events or
+/// quarantined candidates) out of <see cref="SutFiles"/> analyzed, with the
+/// zero-intent complement in <see cref="UntestedSutFiles"/> as the actionable
+/// "add tests for X" list (TDS 15's package-files-analyzed vs
+/// files-with-intent ratio).
 /// </summary>
 public sealed record CoverageReport(
     IReadOnlyList<QuarantinedItem> Quarantined,
     IReadOnlyList<NoiseItem> Noise,
     IReadOnlyList<UnrepresentableItem> Unrepresentable,
+    IReadOnlyList<RetiredItem> Retired,
+    IReadOnlyList<MockShadowItem> MockShadowed,
+    IReadOnlyList<string> UntestedSutFiles,
     int FilesAnalyzed,
     int TestFiles,
-    int TestEntries)
+    int TestEntries,
+    int SutFiles,
+    int FilesWithIntent)
 {
     public static CoverageReport Empty { get; } = new(
         Array.Empty<QuarantinedItem>(), Array.Empty<NoiseItem>(),
-        Array.Empty<UnrepresentableItem>(), 0, 0, 0);
+        Array.Empty<UnrepresentableItem>(), Array.Empty<RetiredItem>(),
+        Array.Empty<MockShadowItem>(), Array.Empty<string>(), 0, 0, 0, 0, 0);
 }
 
 /// <summary>

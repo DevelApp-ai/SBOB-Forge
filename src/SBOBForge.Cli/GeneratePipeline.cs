@@ -154,6 +154,8 @@ public static class GeneratePipeline
         var quarantined = new List<QuarantinedItem>();
         var noise = new List<NoiseItem>();
         var unrepresentable = new List<UnrepresentableItem>();
+        var retired = new List<RetiredItem>();
+        var mockShadowed = new List<MockShadowItem>();
 
         foreach (var err in parseErrors)
             noise.Add(new NoiseItem("parse error allowed via allowParseError: " + err, err, 0, ""));
@@ -273,8 +275,7 @@ public static class GeneratePipeline
             var lang = LangOf(model.RelativePath);
 
             foreach (var skippedEntry in skipped)
-                noise.Add(new NoiseItem("skipped test excluded (harness behavior not profiled)",
-                    skippedEntry.File, skippedEntry.Line, skippedEntry.TestId));
+                retired.Add(new RetiredItem(skippedEntry.TestId, skippedEntry.File, skippedEntry.Line));
 
             var entriesByMethod = entries
                 .GroupBy(e => e.EntryMethod, StringComparer.Ordinal)
@@ -327,6 +328,18 @@ public static class GeneratePipeline
                         var lowered = LowerFor(lang, inv, Substitute);
                         if (lowered is null)
                         {
+                            // M7 coverage report v1 (TDS 7.4): mock-framework APIs inside enabled
+                            // entries never lower, and where such a mock intercepts a SUT
+                            // dependency the SUT's behavior is under-declared — a leading
+                            // downstream false-positive source. Surface these as mock-shadowed
+                            // warnings instead of absorbing them as generic harness noise.
+                            if (MockShadowClassifier.Kind(lang, inv.Receiver, inv.Method) is { } mockKind)
+                            {
+                                mockShadowed.Add(new MockShadowItem(mockKind,
+                                    (inv.Receiver is { Length: > 0 } r ? r + "." : "") + inv.Method,
+                                    model.RelativePath, inv.Line, entry.TestId));
+                                continue;
+                            }
                             noise.Add(new NoiseItem($"harness API: {inv.Receiver}.{inv.Method}",
                                 model.RelativePath, inv.Line, entry.TestId));
                             continue;
@@ -337,12 +350,31 @@ public static class GeneratePipeline
             }
         }
 
+        // M7 coverage report v1 (TDS 7.4/15): the intent ratio. A SUT file counts as
+        // "with intent" when it is the call site of at least one emitted event or
+        // quarantined/unrepresentable candidate (tests reached it with behavioral
+        // intent); the zero-intent complement is the actionable "add tests for X" list.
+        var sutFileSet = new HashSet<string>(sutModels.Select(x => x.Model.RelativePath), StringComparer.Ordinal);
+        var intentFiles = new HashSet<string>(StringComparer.Ordinal);
+        void NoteIntent(IEnumerable<Provenance> provenance) { foreach (var p in provenance) if (sutFileSet.Contains(p.File)) intentFiles.Add(p.File); }
+        foreach (var e in execs) NoteIntent(e.Provenance);
+        foreach (var o in opens) NoteIntent(o.Provenance);
+        foreach (var n in egress) NoteIntent(n.Provenance);
+        foreach (var n in ingress) NoteIntent(n.Provenance);
+        foreach (var q in quarantined) if (sutFileSet.Contains(q.File)) intentFiles.Add(q.File);
+        foreach (var u in unrepresentable) if (sutFileSet.Contains(u.File)) intentFiles.Add(u.File);
+        var untestedSutFiles = sutFileSet.Where(f => !intentFiles.Contains(f)).OrderBy(f => f, StringComparer.Ordinal).ToArray();
+
         var coverage = new CoverageReport(
             quarantined.OrderBy(q => q.File, StringComparer.Ordinal).ThenBy(q => q.Line).ThenBy(q => q.TestId, StringComparer.Ordinal).ToArray(),
             noise.OrderBy(n => n.File, StringComparer.Ordinal).ThenBy(n => n.Line).ThenBy(n => n.TestId, StringComparer.Ordinal).ToArray(),
             unrepresentable.OrderBy(u => u.File, StringComparer.Ordinal).ThenBy(u => u.Line).ThenBy(u => u.TestId, StringComparer.Ordinal).ToArray(),
+            retired.OrderBy(r => r.File, StringComparer.Ordinal).ThenBy(r => r.Line).ThenBy(r => r.TestId, StringComparer.Ordinal).ToArray(),
+            mockShadowed.OrderBy(m => m.File, StringComparer.Ordinal).ThenBy(m => m.Line).ThenBy(m => m.TestId, StringComparer.Ordinal).ToArray(),
+            untestedSutFiles,
             sutFiles.Count + testFiles.Count, testFiles.Count,
-            testModels.Sum(t => t.Entries.Count));
+            testModels.Sum(t => t.Entries.Count),
+            sutFileSet.Count, intentFiles.Count);
 
         var ir = new BehaviorIr(
             package, execs, opens, egress, ingress, coverage,
@@ -427,6 +459,36 @@ public static class GeneratePipeline
         SourceLang.C => "c17",
         SourceLang.Cpp => "cpp20",
         _ => ""
+    };
+
+    /// <summary>Parser grammar-lock key for a language (TDS 5.3).</summary>
+    internal static string ParserLockKey(SourceLang lang) => lang switch
+    {
+        SourceLang.Java => "java17",
+        SourceLang.Python => "python311",
+        SourceLang.Go => "go119",
+        SourceLang.TypeScript => "typescript",
+        SourceLang.Php => "php",
+        SourceLang.PowerShell => "powershell",
+        SourceLang.Bash => "bash",
+        SourceLang.C => "c17",
+        SourceLang.Cpp => "cpp20",
+        _ => "csharp"
+    };
+
+    /// <summary>Catalog grammar-lock key for a language (the lowering table; TDS 5.3).</summary>
+    internal static string CatalogLockKey(SourceLang lang) => lang switch
+    {
+        SourceLang.Java => JavaCatalog.LockEntryName,
+        SourceLang.Python => PythonCatalog.LockEntryName,
+        SourceLang.Go => GoCatalog.LockEntryName,
+        SourceLang.TypeScript => JsCatalog.LockEntryName,
+        SourceLang.Php => PhpCatalog.LockEntryName,
+        SourceLang.PowerShell => PowerShellCatalog.LockEntryName,
+        SourceLang.Bash => BashCatalog.LockEntryName,
+        SourceLang.C => CCatalog.LockEntryName,
+        SourceLang.Cpp => CppCatalog.LockEntryName,
+        _ => DotNetCatalog.LockEntryName
     };
 
     internal static ICodeModelParser ParserFor(SourceLang lang) => lang switch
@@ -544,11 +606,15 @@ public static class GeneratePipeline
     private static string EmitCoverage(BehaviorIr ir) => CanonicalText.LfOnly(JsonSerializer.Serialize(new CoverageDocument(
         ir.IrVersion, ir.ComputeBehaviorHash(),
         ir.Coverage.FilesAnalyzed, ir.Coverage.TestFiles, ir.Coverage.TestEntries,
+        ir.Coverage.SutFiles, ir.Coverage.FilesWithIntent,
+        ir.Coverage.UntestedSutFiles.OrderBy(f => f, StringComparer.Ordinal).ToArray(),
         ir.Coverage.Quarantined.Select(q => new CoverageRow(
             q.Primitive.ToString(), q.Reason, q.File, q.Line, q.TestId, q.CatalogRuleId)).ToArray(),
         ir.Coverage.Noise.Select(n => new NoiseRow(n.Description, n.File, n.Line, n.TestId)).ToArray(),
         ir.Coverage.Unrepresentable.Select(u => new CoverageRow(
-            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray()), Json.Options)) + "\n";
+            "unrepresentable", u.Primitive, u.File, u.Line, u.TestId, "")).ToArray(),
+        ir.Coverage.Retired.Select(r => new RetiredRow(r.TestId, r.File, r.Line)).ToArray(),
+        ir.Coverage.MockShadowed.Select(m => new MockShadowRow(m.Kind, m.Detail, m.File, m.Line, m.TestId)).ToArray()), Json.Options)) + "\n";
 
     public static string RoslynVersion() =>
         typeof(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -561,13 +627,22 @@ public static class GeneratePipeline
 
     private sealed record NoiseRow(string Description, string File, int Line, string TestId);
 
+    private sealed record RetiredRow(string TestId, string File, int Line);
+
+    private sealed record MockShadowRow(string Kind, string Detail, string File, int Line, string TestId);
+
     private sealed record CoverageDocument(
         int SbobIrVersion,
         string BehaviorHash,
         int FilesAnalyzed,
         int TestFiles,
         int TestEntries,
+        int SutFiles,
+        int FilesWithIntent,
+        string[] UntestedSutFiles,
         CoverageRow[] Quarantined,
         NoiseRow[] Noise,
-        CoverageRow[] Unrepresentable);
+        CoverageRow[] Unrepresentable,
+        RetiredRow[] Retired,
+        MockShadowRow[] MockShadowed);
 }

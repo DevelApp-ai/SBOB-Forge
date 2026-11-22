@@ -4,6 +4,9 @@
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 4,
+  "SutFiles": 1,
+  "FilesWithIntent": 1,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -24,12 +27,6 @@
   ],
   "Noise": [
     {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/js/config-store.test.js",
-      "Line": 12,
-      "TestId": "tests/js/config-store.test.js::config store \u003E legacy path"
-    },
-    {
       "Description": "test helper (not an entry method): .loadUser",
       "File": "tests/js/config-store.test.js",
       "Line": 13,
@@ -45,5 +42,13 @@
       "TestId": "sut:config-store.clearCache",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/js/config-store.test.js::config store \u003E legacy path",
+      "File": "tests/js/config-store.test.js",
+      "Line": 12
+    }
+  ],
+  "MockShadowed": []
 }

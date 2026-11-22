@@ -4,6 +4,9 @@
   "FilesAnalyzed": 3,
   "TestFiles": 1,
   "TestEntries": 3,
+  "SutFiles": 2,
+  "FilesWithIntent": 2,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -15,12 +18,6 @@
     }
   ],
   "Noise": [
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/test_config_store.py",
-      "Line": 11,
-      "TestId": "tests/test_config_store.py::test_legacy_path"
-    },
     {
       "Description": "test helper (not an entry method): .open",
       "File": "tests/test_config_store.py",
@@ -49,5 +46,13 @@
       "TestId": "sut:config_store.clean_cache",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/test_config_store.py::test_legacy_path",
+      "File": "tests/test_config_store.py",
+      "Line": 11
+    }
+  ],
+  "MockShadowed": []
 }

@@ -4,6 +4,9 @@
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 4,
+  "SutFiles": 1,
+  "FilesWithIntent": 1,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -15,12 +18,6 @@
     }
   ],
   "Noise": [
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/c/store_test.c",
-      "Line": 24,
-      "TestId": "tests/c/store_test.c::ConfigStore.SkippedLegacyPath"
-    },
     {
       "Description": "test helper (not an entry method): .GTEST_SKIP",
       "File": "tests/c/store_test.c",
@@ -49,5 +46,13 @@
       "TestId": "sut:\u003Cglobal\u003E.clean_cache",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/c/store_test.c::ConfigStore.SkippedLegacyPath",
+      "File": "tests/c/store_test.c",
+      "Line": 24
+    }
+  ],
+  "MockShadowed": []
 }

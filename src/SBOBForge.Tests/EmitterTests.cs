@@ -86,7 +86,9 @@ public class EmitterTests
     {
         var quarantined = new CoverageReport(
             new[] { new QuarantinedItem(BehaviorPrimitive.Open, "unresolvable", "f.cs", 1, "T", "r") },
-            Array.Empty<NoiseItem>(), Array.Empty<UnrepresentableItem>(), 1, 1, 1);
+            Array.Empty<NoiseItem>(), Array.Empty<UnrepresentableItem>(),
+            Array.Empty<RetiredItem>(), Array.Empty<MockShadowItem>(), Array.Empty<string>(),
+            1, 1, 1, 0, 0);
         var ir = new BehaviorIr(
             new PackageIdentity("nuget", "X", "1.0.0", "linux"),
             Array.Empty<ExecEvent>(), Array.Empty<OpenEvent>(),

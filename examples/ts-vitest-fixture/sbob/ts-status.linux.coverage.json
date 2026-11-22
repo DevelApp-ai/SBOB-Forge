@@ -4,14 +4,11 @@
   "FilesAnalyzed": 2,
   "TestFiles": 1,
   "TestEntries": 3,
+  "SutFiles": 1,
+  "FilesWithIntent": 1,
+  "UntestedSutFiles": [],
   "Quarantined": [],
   "Noise": [
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/ts/status-client.test.ts",
-      "Line": 15,
-      "TestId": "tests/ts/status-client.test.ts::status client \u003E legacy shell"
-    },
     {
       "Description": "test helper (not an entry method): .shellOut",
       "File": "tests/ts/status-client.test.ts",
@@ -28,5 +25,13 @@
       "TestId": "sut:status-client.clearStatus",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "tests/ts/status-client.test.ts::status client \u003E legacy shell",
+      "File": "tests/ts/status-client.test.ts",
+      "Line": 15
+    }
+  ],
+  "MockShadowed": []
 }

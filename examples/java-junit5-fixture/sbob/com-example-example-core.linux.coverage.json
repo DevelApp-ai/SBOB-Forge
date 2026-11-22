@@ -4,6 +4,9 @@
   "FilesAnalyzed": 4,
   "TestFiles": 1,
   "TestEntries": 3,
+  "SutFiles": 3,
+  "FilesWithIntent": 3,
+  "UntestedSutFiles": [],
   "Quarantined": [
     {
       "Primitive": "Open",
@@ -20,12 +23,6 @@
       "File": "tests/com/example/core/ConfigStoreTests.java",
       "Line": 17,
       "TestId": "com.example.core.tests.ConfigStoreTests.loadsConfigFromEtc"
-    },
-    {
-      "Description": "skipped test excluded (harness behavior not profiled)",
-      "File": "tests/com/example/core/ConfigStoreTests.java",
-      "Line": 22,
-      "TestId": "com.example.core.tests.ConfigStoreTests.legacyPathStillUsed"
     },
     {
       "Description": "test helper (not an entry method): Files.readString",
@@ -73,5 +70,13 @@
       "TestId": "sut:com.example.core.sut.ConfigStore.resetCache",
       "Rule": ""
     }
-  ]
+  ],
+  "Retired": [
+    {
+      "TestId": "com.example.core.tests.ConfigStoreTests.legacyPathStillUsed",
+      "File": "tests/com/example/core/ConfigStoreTests.java",
+      "Line": 22
+    }
+  ],
+  "MockShadowed": []
 }

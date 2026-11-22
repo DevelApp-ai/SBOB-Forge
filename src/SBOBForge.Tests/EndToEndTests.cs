@@ -103,11 +103,26 @@ public class EndToEndTests
         var ingress = Assert.Single(result.Ir.Ingress);
         Assert.Equal(8080, ingress.Port);
 
-        // coverage: interpolated path quarantined, File.Delete unrepresentable, skipped test noise
+        // coverage: interpolated path quarantined, File.Delete unrepresentable, skipped test retired
         Assert.Contains(result.Ir.Coverage.Quarantined,
             q => q.Reason.Contains("interpolated") && q.File.EndsWith("ConfigStore.cs"));
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("LegacyPathStillUsed"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("LegacyPathStillUsed"));
+
+        // M7 coverage report v1 (SBOB-Forge #6; TDS 7.4): inventory metrics
+        Assert.Equal(5, result.Ir.Coverage.FilesAnalyzed);
+        Assert.Equal(3, result.Ir.Coverage.TestEntries);
+        Assert.Equal(4, result.Ir.Coverage.SutFiles);
+        Assert.Equal(4, result.Ir.Coverage.FilesWithIntent);
+        Assert.Empty(result.Ir.Coverage.UntestedSutFiles);
+        Assert.Contains(result.Ir.Coverage.Retired, r => r.File.EndsWith("ConfigStoreTests.cs"));
+
+        // mock-shadowed warnings: Substitute.For + registryMock.VerifyAll are
+        // classified as mock frameworks, not absorbed as harness noise
+        Assert.Contains(result.Ir.Coverage.MockShadowed, m => m.Kind == "nsubstitute" && m.Detail == "Substitute.For");
+        Assert.Contains(result.Ir.Coverage.MockShadowed, m => m.Kind == "moq" && m.Detail == "registryMock.VerifyAll");
+        Assert.DoesNotContain(result.Ir.Coverage.Noise, n => n.Description.Contains("Substitute"));
+        Assert.DoesNotContain(result.Ir.Coverage.Noise, n => n.Description.Contains("VerifyAll"));
     }
 
     [Fact]
@@ -253,7 +268,7 @@ public class EndToEndTests
         Assert.Contains(result.Ir.Coverage.Quarantined,
             q => q.Reason.Contains("non-constant expression") && q.File.EndsWith("ConfigStore.java"));
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacyPathStillUsed"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("legacyPathStillUsed"));
     }
 
     [Fact]
@@ -284,7 +299,7 @@ public class EndToEndTests
         Assert.Equal(443, egress.Port);
         Assert.Empty(result.Ir.Ingress);
         Assert.Empty(result.Ir.Coverage.Quarantined);
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacyRewriteStillUsed"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("legacyRewriteStillUsed"));
     }
 
     [Fact]
@@ -334,7 +349,7 @@ public class EndToEndTests
         Assert.Contains(result.Ir.Coverage.Quarantined,
             q => q.Reason.Contains("interpolated") && q.File.EndsWith("config_store.py"));
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("test_legacy_path"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("test_legacy_path"));
     }
 
     [Fact]
@@ -366,7 +381,7 @@ public class EndToEndTests
         Assert.Equal(8080, Assert.Single(result.Ir.Ingress).Port);
 
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("test_legacy_shell"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("test_legacy_shell"));
     }
 
     // ---- M3: Go and JS/TS fixtures (#5) ---------------------------------
@@ -430,8 +445,8 @@ public class EndToEndTests
             q => q.Reason.Contains("non-constant expression") && q.File.EndsWith("configstore.go"));
         // os.Remove → delete primitive, unrepresentable in the SBOB spec
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
-        // t.Skip'd test excluded
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("TestLegacyPath"));
+        // t.Skip'd test retired
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("TestLegacyPath"));
         Assert.Equal(3, result.Ir.Coverage.TestEntries);
     }
 
@@ -472,7 +487,7 @@ public class EndToEndTests
         Assert.Contains(result.Ir.Coverage.Quarantined, q => q.Reason.Contains("identifier"));
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
         // it.skip excluded
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("legacy path"));
     }
 
     [Fact]
@@ -501,7 +516,7 @@ public class EndToEndTests
         Assert.Equal(8080, Assert.Single(result.Ir.Ingress).Port);
 
         // it.skipIf(true) proves a skip: excluded, its SUT call (shellOut) never lifted
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy shell"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("legacy shell"));
         Assert.DoesNotContain(result.Ir.Execs, e => e.Provenance
             .Any(p => p.TestId.EndsWith("legacy shell")));
         // fs.rmSync → delete primitive
@@ -564,9 +579,9 @@ public class EndToEndTests
             q => q.Reason.Contains("path/URL") && q.File.EndsWith("ConfigStore.php"));
         // unlink → delete primitive, unrepresentable in the SBOB spec
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
-        // markTestSkipped and @requires tests excluded
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::testLegacyPath"));
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::testRequiresDatabase"));
+        // markTestSkipped and @requires tests retired
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("::testLegacyPath"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("::testRequiresDatabase"));
         Assert.Equal(4, result.Ir.Coverage.TestEntries);
     }
 
@@ -605,7 +620,7 @@ public class EndToEndTests
         // Remove-Item → delete primitive
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
         // It -Skip excluded
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("legacy path"));
         Assert.Equal(4, result.Ir.Coverage.TestEntries);
 
         // TDS 5.4 Phase B: powershell is structural now — no parser-tier annotation
@@ -640,7 +655,7 @@ public class EndToEndTests
         // rm → delete primitive
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
         // skipped @test excluded
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("legacy path"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("legacy path"));
         Assert.Equal(4, result.Ir.Coverage.TestEntries);
 
         // TDS 5.4 Phase B: bash is structural now — no parser-tier annotation
@@ -702,7 +717,7 @@ public class EndToEndTests
         // unlink → delete primitive, unrepresentable in the SBOB spec
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
         // GTEST_SKIP test excluded; static helper is harness noise
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::ConfigStore.SkippedLegacyPath"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("::ConfigStore.SkippedLegacyPath"));
         Assert.Contains(result.Ir.Coverage.Noise,
             n => n.Description.Contains("test helper") && n.File.EndsWith("store_test.c"));
         Assert.Equal(4, result.Ir.Coverage.TestEntries);
@@ -748,7 +763,7 @@ public class EndToEndTests
         // std::filesystem::remove_all → delete primitive
         Assert.Contains(result.Ir.Coverage.Unrepresentable, u => u.Primitive == "delete");
         // SKIP() test excluded; static helper is harness noise
-        Assert.Contains(result.Ir.Coverage.Noise, n => n.TestId.EndsWith("::legacy path is retired"));
+        Assert.Contains(result.Ir.Coverage.Retired, n => n.TestId.EndsWith("::legacy path is retired"));
         Assert.Contains(result.Ir.Coverage.Noise,
             n => n.Description.Contains("test helper") && n.File.EndsWith("config_store_test.cpp"));
         Assert.Equal(5, result.Ir.Coverage.TestEntries);
