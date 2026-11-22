@@ -1,0 +1,11 @@
+{
+  "packageType": "generic",
+  "packageName": "example/equiv-open-append",
+  "packageVersion": "1.0.0",
+  "namespace": "develapp",
+  "targetOs": "linux",
+  "architectures": [ "amd64" ],
+  "sutGlobs": [ "sut/**" ],
+  "testGlobs": [ "tests/**" ],
+  "allowParseError": []
+}

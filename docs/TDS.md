@@ -144,6 +144,7 @@ SBOB-Forge/
 │   └── SBOBForge.Tests/         # unit + golden + equivalence corpus tests
 ├── catalog/                     # language catalog source (JSON), committed
 ├── examples/                    # dogfood fixtures per language
+├── equivalence/                 # cross-language equivalence corpus (TDS 14.3)
 └── docs/TDS.md                  # this document
 ```
 
@@ -589,7 +590,7 @@ Exit codes: `0` ok · `2` parse/validation hard error (also: no provenance rows 
 
 1. **Unit**: catalog matching, flags mapping, IDNA/punycode, canonical writer ordering, tier classification.
 2. **Golden fixtures**: `examples/<lang>-<framework>/` micro-repos per matrix cell; committed SBOBs are the assertions; byte-identical regeneration required (dogfood: one fixture is DevelApp.StepParser's real suite).
-3. **Cross-language equivalence corpus**: ~20 behavior scenarios (open-read, open-append, spawn with args, https call, listen, mocked-egress…) each implemented in all 11 languages × primary frameworks; assert identical emitted sections.
+3. **Cross-language equivalence corpus**: ~20 behavior scenarios (open-read, open-append, spawn with args, https call, listen, mocked-egress…) each implemented per language × primary framework; assert **byte-identical emitted SBoBs** across languages. Implementation: `equivalence/scenarios/` + `src/SBOBForge.Tests/EquivalenceTests.cs`. Participation is per scenario — a language joins only when its catalog has a native (non-shell-mediated) rule for the scenario primitive; exclusions (bash open-read, cpp exec-args, bash/php/powershell listen-ingress) are honest gaps recorded per scenario, not forced. Status: 7 core scenarios landed (open-read, open-append, open-write-truncate, exec-args, https-egress, listen-ingress, dynamic-open-quarantine); the remaining scenarios (~13) are tracked in SBOB-Forge #6; adding one needs only a new scenario directory + harness contract case.
 4. **Negative corpus**: `⋯` misuse, args `*` literalness, NULL-vs-NONE, quarantine triggers — must fail validate with the documented codes.
 5. **Downstream replay**: emitted fixtures run through the Software-Bill-of-Behavior transpiler CI lane (pin its main SHA in SBOB-Forge's workflow).
 
@@ -623,27 +624,3 @@ Milestones follow org decision #27 (milestone issues close when capabilities are
 
 **Open issues**
 
-1. Upstream (bob project): contribute the package-purl binding / `package-profile` variant of the spec; propose `delete`-class primitives for a future spec version. The 2027 CNCF goal doesn't cover NuGet/Chocolatey distribution — this is a differentiable contribution.
-2. Software-Bill-of-Behavior: extend the validator's `imageID` pattern for `pkg:` purls; decide whether the drift ruleset binds to `metadata.name` (recommended) instead of parsing `imageID`. — **Filed as [Software-Bill-of-Behavior#33](https://github.com/DevelApp-ai/Software-Bill-of-Behavior/issues/33)** (2026-10-31).
-3. Minotaur-Grammars: `powershell`/`bash` grammar authoring (M5 dependency).
-4. ~~SBOB-Forge internal: argv0-anchoring policy when exec args are parameterized (`args: [argv0, ⋯⋯]` vs full quarantine) — needs real-suite data from M1 before freezing.~~ — **Resolved 2026-10-31 (M2 dogfood):** argv0-anchoring adopted; see the M2 implementation note (§5.2).
-5. ~~Naming placeholder pending Lars's call~~ — **Resolved 2026-10-31:** `SBOB-Forge` confirmed (repo created); CLI binary remains `sbobforge`.
-
-**Risks**
-
-| Risk | Severity | Mitigation |
-|---|---|---|
-| Static extraction under-declares → downstream drift FPs | High | Honest-coverage principle (§8.4, §15); mock-shadowed warnings; Phase 2 dynamic lane |
-| Grammar gaps/drift across 11 languages | Medium | Lock + sha256; equivalence corpus; structural backends sha-pinned via embedded grammar copies |
-| Upstream spec churn (v0.0.4 is Proposed-stage, "frequent rewriting" per bob README) | Medium | Pin spec version in the validator (as the transpiler does); spec-bump is an explicit PR |
-| CognitiveGraph V2 memory on huge monorepos | Medium | Size thresholds; per-package generation scope (one package per run by design) |
-
----
-
-## 17. References
-
-- SBOB spec v0.0.4 — <https://billofbehavior.com/bob/docs/spec/> · reference repo: <https://github.com/k8sstormcenter/bob> (example profiles under `example/`)
-- Software-Bill-of-Behavior (SBoB → Wazuh transpiler, this generator's downstream contract): <https://github.com/DevelApp-ai/Software-Bill-of-Behavior>
-- Minotaur (parsing substrate): <https://github.com/DevelApp-ai/Minotaur> · grammars: <https://github.com/DevelApp-ai/Minotaur-Grammars>
-- purl spec: <https://github.com/package-url/purl-spec>
-- Org decisions applied: #6, #7, #8, #9, #14, #20, #26, #27, #28 (DevelApp-ai/DevelApp-Repo-Global)
