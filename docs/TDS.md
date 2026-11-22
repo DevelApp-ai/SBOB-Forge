@@ -479,6 +479,8 @@ SBOB-Forge canonically emits the upstream bob-spec dialect (`spdx.softwarecompos
 
 The transpiler-replay CI lane (§10.1) and the registry publish workflow (§10.3) both go through the converter, so the registry copy and the emitted profile can never diverge in content — only in header and dialect marker.
 
+**Upstream decision recorded (DevelApp-Repo-Global decision ["SBoB registry dialect is primary; Kubescape dialect maintained for compatibility via the permanent guarded bridge"](https://github.com/DevelApp-ai/DevelApp-Repo-Global/issues/85), Lars, 2026-11-22, resolving #29): the registry dialect is the ecosystem's main dialect; the Kubescape dialect stays as the compatibility surface. The bridge is therefore permanent infrastructure, not interim: `ConverterDriftTests` pins, for every committed golden, that convert is exactly a header+marker rewrite (payload bytes identical below the three changed lines, deterministic, foreign-input refused), so the two dialects cannot silently diverge. The revisit path stays open — a future upstream bob-spec adoption of the registry header could retire the bridge via a follow-up decision.
+
 ### 10.5 Artifact signature model and visibility lanes
 
 Every published SBoB exists in exactly two forms, and confusing their roles is the first distribution mistake:
